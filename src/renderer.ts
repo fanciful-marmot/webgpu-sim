@@ -1,25 +1,35 @@
-import vertShaderCode from './shaders/triangle.vert.wgsl';
-import fragShaderCode from './shaders/triangle.frag.wgsl';
+import blitShaderCode from './shaders/blit.wgsl';
 
-// 📈 Position Vertex Buffer Data
-const positions = new Float32Array([
-    1.0, -1.0, 0.0, -1.0, -1.0, 0.0, 0.0, 1.0, 0.0
-]);
-// 🎨 Color Vertex Buffer Data
-const colors = new Float32Array([
-    1.0,
-    0.0,
-    0.0, // 🔴
-    0.0,
-    1.0,
-    0.0, // 🟢
-    0.0,
-    0.0,
-    1.0 // 🔵
-]);
+const unitSquareData = {
+    vertices: new Float32Array([
+        1.0, -1.0, 0.0,  // BR
+        -1.0, -1.0, 0.0, // BL
+        -1.0, 1.0, 0.0,  // TL
+        1.0, 1.0, 0.0,   // TR
+    ]),
+    indices: new Uint16Array([0, 1, 2, 2, 3, 0]),
+};
 
-// 📇 Index Buffer Data
-const indices = new Uint16Array([0, 1, 2]);
+const createBuffer = (
+    device: GPUDevice,
+    arr: Float32Array | Uint16Array,
+    usage: number
+) => {
+    // 📏 Align to 4 bytes (thanks @chrimsonite)
+    let desc = {
+        size: (arr.byteLength + 3) & ~3,
+        usage,
+        mappedAtCreation: true
+    };
+    let buffer = device.createBuffer(desc);
+    const writeArray =
+        arr instanceof Uint16Array
+            ? new Uint16Array(buffer.getMappedRange())
+            : new Float32Array(buffer.getMappedRange());
+    writeArray.set(arr);
+    buffer.unmap();
+    return buffer;
+};
 
 export default class Renderer {
     canvas: HTMLCanvasElement;
@@ -36,12 +46,10 @@ export default class Renderer {
     depthTexture: GPUTexture;
     depthTextureView: GPUTextureView;
 
-    // 🔺 Resources
+    // Resources
     positionBuffer: GPUBuffer;
-    colorBuffer: GPUBuffer;
     indexBuffer: GPUBuffer;
-    vertModule: GPUShaderModule;
-    fragModule: GPUShaderModule;
+    blitModule: GPUShaderModule;
     pipeline: GPURenderPipeline;
 
     commandEncoder: GPUCommandEncoder;
@@ -87,41 +95,13 @@ export default class Renderer {
 
     // 🍱 Initialize resources to render triangle (buffers, shaders, pipeline)
     async initializeResources() {
-        // 🔺 Buffers
-        const createBuffer = (
-            arr: Float32Array | Uint16Array,
-            usage: number
-        ) => {
-            // 📏 Align to 4 bytes (thanks @chrimsonite)
-            let desc = {
-                size: (arr.byteLength + 3) & ~3,
-                usage,
-                mappedAtCreation: true
-            };
-            let buffer = this.device.createBuffer(desc);
-            const writeArray =
-                arr instanceof Uint16Array
-                    ? new Uint16Array(buffer.getMappedRange())
-                    : new Float32Array(buffer.getMappedRange());
-            writeArray.set(arr);
-            buffer.unmap();
-            return buffer;
-        };
+        this.positionBuffer = createBuffer(this.device, unitSquareData.vertices, GPUBufferUsage.VERTEX);
+        this.indexBuffer = createBuffer(this.device, unitSquareData.indices, GPUBufferUsage.INDEX);
 
-        this.positionBuffer = createBuffer(positions, GPUBufferUsage.VERTEX);
-        this.colorBuffer = createBuffer(colors, GPUBufferUsage.VERTEX);
-        this.indexBuffer = createBuffer(indices, GPUBufferUsage.INDEX);
-
-        // 🖍️ Shaders
-        const vsmDesc = {
-            code: vertShaderCode
-        };
-        this.vertModule = this.device.createShaderModule(vsmDesc);
-
-        const fsmDesc = {
-            code: fragShaderCode
-        };
-        this.fragModule = this.device.createShaderModule(fsmDesc);
+        // Shaders
+        this.blitModule = this.device.createShaderModule({
+            code: blitShaderCode,
+        });
 
         // ⚗️ Graphics Pipeline
 
@@ -131,18 +111,8 @@ export default class Renderer {
             offset: 0,
             format: 'float32x3'
         };
-        const colorAttribDesc: GPUVertexAttribute = {
-            shaderLocation: 1, // [[location(1)]]
-            offset: 0,
-            format: 'float32x3'
-        };
         const positionBufferDesc: GPUVertexBufferLayout = {
             attributes: [positionAttribDesc],
-            arrayStride: 4 * 3, // sizeof(float) * 3
-            stepMode: 'vertex'
-        };
-        const colorBufferDesc: GPUVertexBufferLayout = {
-            attributes: [colorAttribDesc],
             arrayStride: 4 * 3, // sizeof(float) * 3
             stepMode: 'vertex'
         };
@@ -160,19 +130,19 @@ export default class Renderer {
 
         // 🎭 Shader Stages
         const vertex: GPUVertexState = {
-            module: this.vertModule,
-            entryPoint: 'main',
-            buffers: [positionBufferDesc, colorBufferDesc]
+            module: this.blitModule,
+            entryPoint: 'vs_main',
+            buffers: [positionBufferDesc]
         };
 
         // 🌀 Color/Blend State
         const colorState: GPUColorTargetState = {
-            format: 'bgra8unorm'
+            format: navigator.gpu.getPreferredCanvasFormat(),
         };
 
         const fragment: GPUFragmentState = {
-            module: this.fragModule,
-            entryPoint: 'main',
+            module: this.blitModule,
+            entryPoint: 'fs_main',
             targets: [colorState]
         };
 
@@ -202,11 +172,11 @@ export default class Renderer {
             this.context = this.canvas.getContext('webgpu');
             const canvasConfig: GPUCanvasConfiguration = {
                 device: this.device,
-                format: 'bgra8unorm',
+                format: navigator.gpu.getPreferredCanvasFormat(),
                 usage:
                     GPUTextureUsage.RENDER_ATTACHMENT |
                     GPUTextureUsage.COPY_SRC,
-                    alphaMode: 'opaque'
+                alphaMode: 'opaque'
             };
             this.context.configure(canvasConfig);
         }
@@ -266,9 +236,8 @@ export default class Renderer {
             this.canvas.height
         );
         this.passEncoder.setVertexBuffer(0, this.positionBuffer);
-        this.passEncoder.setVertexBuffer(1, this.colorBuffer);
         this.passEncoder.setIndexBuffer(this.indexBuffer, 'uint16');
-        this.passEncoder.drawIndexed(3, 1);
+        this.passEncoder.drawIndexed(6, 1);
         this.passEncoder.end();
 
         this.queue.submit([this.commandEncoder.finish()]);

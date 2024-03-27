@@ -52,9 +52,3 @@ As your project becomes more complex, you'll want to separate files and organize
 ├─ 📄 license.md      # ⚖️ Your License (Unlicense)
 └─ 📃readme.md        # 📖 Read Me!
 ```
-
-
-[license-img]: https://img.shields.io/:license-unlicense-blue.svg?style=flat-square
-[license-url]: https://unlicense.org/
-[travis-img]: https://img.shields.io/travis/com/alaingalvan/webgpu-seed.svg?style=flat-square
-[travis-url]:https://www.travis-ci.com/github/alaingalvan/webgpu-seed
