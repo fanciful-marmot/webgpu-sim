@@ -34,17 +34,13 @@ const createBuffer = (
 export default class Renderer {
     canvas: HTMLCanvasElement;
 
-    // ⚙️ API Data Structures
+    // API Data Structures
     adapter: GPUAdapter;
     device: GPUDevice;
     queue: GPUQueue;
 
-    // 🎞️ Frame Backings
+    // Frame Backings
     context: GPUCanvasContext;
-    colorTexture: GPUTexture;
-    colorTextureView: GPUTextureView;
-    depthTexture: GPUTexture;
-    depthTextureView: GPUTextureView;
 
     // Resources
     positionBuffer: GPUBuffer;
@@ -117,13 +113,6 @@ export default class Renderer {
             stepMode: 'vertex'
         };
 
-        // 🌑 Depth
-        const depthStencil: GPUDepthStencilState = {
-            depthWriteEnabled: true,
-            depthCompare: 'less',
-            format: 'depth24plus-stencil8'
-        };
-
         // 🦄 Uniform Data
         const pipelineLayoutDesc = { bindGroupLayouts: [] };
         const layout = this.device.createPipelineLayout(pipelineLayoutDesc);
@@ -160,7 +149,6 @@ export default class Renderer {
             fragment,
 
             primitive,
-            depthStencil
         };
         this.pipeline = this.device.createRenderPipeline(pipelineDesc);
     }
@@ -180,40 +168,19 @@ export default class Renderer {
             };
             this.context.configure(canvasConfig);
         }
-
-        const depthTextureDesc: GPUTextureDescriptor = {
-            size: [this.canvas.width, this.canvas.height, 1],
-            dimension: '2d',
-            format: 'depth24plus-stencil8',
-            usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC
-        };
-
-        this.depthTexture = this.device.createTexture(depthTextureDesc);
-        this.depthTextureView = this.depthTexture.createView();
     }
 
     // ✍️ Write commands to send to the GPU
     encodeCommands() {
         let colorAttachment: GPURenderPassColorAttachment = {
-            view: this.colorTextureView,
+            view: this.context.getCurrentTexture().createView(),
             clearValue: { r: 0, g: 0, b: 0, a: 1 },
             loadOp: 'clear',
             storeOp: 'store'
         };
 
-        const depthAttachment: GPURenderPassDepthStencilAttachment = {
-            view: this.depthTextureView,
-            depthClearValue: 1,
-            depthLoadOp: 'clear',
-            depthStoreOp: 'store',
-            stencilClearValue: 0,
-            stencilLoadOp: 'clear',
-            stencilStoreOp: 'store'
-        };
-
         const renderPassDesc: GPURenderPassDescriptor = {
             colorAttachments: [colorAttachment],
-            depthStencilAttachment: depthAttachment
         };
 
         this.commandEncoder = this.device.createCommandEncoder();
@@ -244,14 +211,10 @@ export default class Renderer {
     }
 
     render = () => {
-        // ⏭ Acquire next image from context
-        this.colorTexture = this.context.getCurrentTexture();
-        this.colorTextureView = this.colorTexture.createView();
-
-        // 📦 Write and submit commands to queue
+        // Write and submit commands to queue
         this.encodeCommands();
 
-        // ➿ Refresh canvas
+        // Refresh canvas
         requestAnimationFrame(this.render);
     };
 }
