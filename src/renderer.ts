@@ -1,4 +1,5 @@
 import blitShaderCode from './shaders/blit.wgsl';
+import decayShaderCode from './shaders/decay.wgsl';
 
 const unitSquareData = {
     vertices: new Float32Array([
@@ -6,6 +7,12 @@ const unitSquareData = {
         -1.0, -1.0, 0.0, // BL
         -1.0, 1.0, 0.0,  // TL
         1.0, 1.0, 0.0,   // TR
+    ]),
+    uvs: new Float32Array([
+        1.0, 1.0, // BR
+        0.0, 1.0, // BL
+        0.0, 0.0, // TL
+        1.0, 0.0, // TR
     ]),
     indices: new Uint16Array([0, 1, 2, 2, 3, 0]),
 };
@@ -31,6 +38,9 @@ const createBuffer = (
     return buffer;
 };
 
+const AGENT_FIELD_SIZE = 128;
+const NUM_AGENTS = 64;
+
 export default class Renderer {
     canvas: HTMLCanvasElement;
 
@@ -39,32 +49,46 @@ export default class Renderer {
     device: GPUDevice;
     queue: GPUQueue;
 
-    // Frame Backings
+    // Frame backings
     context: GPUCanvasContext;
 
-    // Resources
-    positionBuffer: GPUBuffer;
-    indexBuffer: GPUBuffer;
+    // Blit resources
+    unitSquare: {
+        positionBuffer: GPUBuffer;
+        uvBuffer: GPUBuffer;
+        indexBuffer: GPUBuffer;
+    };
     blitModule: GPUShaderModule;
     pipeline: GPURenderPipeline;
 
-    commandEncoder: GPUCommandEncoder;
-    passEncoder: GPURenderPassEncoder;
+    // Agent resources
+    agentFieldTextures: Array<{
+        texture: GPUTexture;
+        view: GPUTextureView;
+        bindGroup: GPUBindGroup;
+    }>;
+    agentBuffers: Array<{
+        buffer: GPUBuffer;
+    }>;
+    agentFieldPipeline: GPURenderPipeline;
+
+    pingpong: 0 | 1 = 0;
 
     constructor(canvas) {
         this.canvas = canvas;
     }
 
-    // 🏎️ Start the rendering engine
+    // Start the rendering engine
     async start() {
         if (await this.initializeAPI()) {
             this.resizeBackings();
-            await this.initializeResources();
+            this.initializeBlitResources();
+            this.initializeAgentResources();
             this.render();
         }
     }
 
-    // 🌟 Initialize WebGPU
+    // Initialize WebGPU
     async initializeAPI(): Promise<boolean> {
         try {
             // 🏭 Entry to WebGPU
@@ -77,7 +101,7 @@ export default class Renderer {
             this.adapter = await entry.requestAdapter();
 
             // 💻 Logical Device
-            this.device = await this.adapter.requestDevice();
+            this.device = await this.adapter.requestDevice({ requiredFeatures: ['float32-filterable'] as any });
 
             // 📦 Queue
             this.queue = this.device.queue;
@@ -89,19 +113,29 @@ export default class Renderer {
         return true;
     }
 
-    // 🍱 Initialize resources to render triangle (buffers, shaders, pipeline)
-    async initializeResources() {
-        this.positionBuffer = createBuffer(this.device, unitSquareData.vertices, GPUBufferUsage.VERTEX);
-        this.indexBuffer = createBuffer(this.device, unitSquareData.indices, GPUBufferUsage.INDEX);
+    initializeAgentResources() {
+        // Create the agent buffers
+        const floatsPerAgent = 4;
+        const agentData = new Float32Array(NUM_AGENTS * floatsPerAgent);
+        for (let i = 0; i < NUM_AGENTS; i += floatsPerAgent) {
+            agentData[i + 0] = 0; // pos.x
+            agentData[i + 1] = 0; // pos.y
+            agentData[i + 2] = 0; // vel.x
+            agentData[i + 3] = 0; // vel.y
+        }
+        this.agentBuffers = [
+            { buffer: createBuffer(this.device, agentData, GPUBufferUsage.VERTEX) },
+            { buffer: createBuffer(this.device, agentData, GPUBufferUsage.VERTEX) },
+        ];
 
         // Shaders
-        this.blitModule = this.device.createShaderModule({
-            code: blitShaderCode,
+        const decayModule = this.device.createShaderModule({
+            code: decayShaderCode,
         });
 
-        // ⚗️ Graphics Pipeline
+        // Graphics Pipeline
 
-        // 🔣 Input Assembly
+        // Input Assembly
         const positionAttribDesc: GPUVertexAttribute = {
             shaderLocation: 0, // [[location(0)]]
             offset: 0,
@@ -112,19 +146,157 @@ export default class Renderer {
             arrayStride: 4 * 3, // sizeof(float) * 3
             stepMode: 'vertex'
         };
+        const uvAttribDesc: GPUVertexAttribute = {
+            shaderLocation: 1, // [[location(1)]]
+            offset: 0,
+            format: 'float32x2'
+        };
+        const uvBufferDesc: GPUVertexBufferLayout = {
+            attributes: [uvAttribDesc],
+            arrayStride: 4 * 2, // sizeof(float) * 2
+            stepMode: 'vertex'
+        };
 
-        // 🦄 Uniform Data
-        const pipelineLayoutDesc = { bindGroupLayouts: [] };
-        const layout = this.device.createPipelineLayout(pipelineLayoutDesc);
+        // Uniform Data
+        const bindGroupLayout = this.device.createBindGroupLayout({
+            label: 'AgentFieldBindGroup',
+            entries: [
+                { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+                { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+            ],
+        });
+        const pipelineLayoutDesc = { bindGroupLayouts: [bindGroupLayout] };
+        const pipelineLayout = this.device.createPipelineLayout(pipelineLayoutDesc);
 
-        // 🎭 Shader Stages
+        // Create field textures
+        const baseFieldData = new Float32Array(AGENT_FIELD_SIZE * AGENT_FIELD_SIZE * 4);
+        baseFieldData.fill(1.0);
+
+        const fieldDescriptor: GPUTextureDescriptor = {
+            label: 'AgentFieldTexture',
+            size: [AGENT_FIELD_SIZE, AGENT_FIELD_SIZE, 1],
+            usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_DST | GPUTextureUsage.TEXTURE_BINDING,
+            format: 'rgba32float',
+        };
+        const sampler = this.device.createSampler();
+        const createField = () => {
+            const texture = this.device.createTexture(fieldDescriptor);
+            const view = texture.createView();
+            const bindGroup = this.device.createBindGroup({
+                label: 'AgentFieldBindGroup',
+                layout: bindGroupLayout,
+                entries: [
+                    { binding: 0, resource: sampler },
+                    { binding: 1, resource: view },
+                ],
+            });
+
+            this.device.queue.writeTexture({ texture }, baseFieldData, { bytesPerRow: AGENT_FIELD_SIZE * 4 * 4 }, { width: AGENT_FIELD_SIZE, height: AGENT_FIELD_SIZE });
+
+            return {
+                texture,
+                view,
+                bindGroup,
+            }
+        };
+        this.agentFieldTextures = [
+            createField(),
+            createField(),
+        ];
+
+        // Shader Stages
+        const vertex: GPUVertexState = {
+            module: decayModule,
+            entryPoint: 'vs_main',
+            buffers: [positionBufferDesc, uvBufferDesc]
+        };
+
+        const colorState: GPUColorTargetState = {
+            format: 'rgba32float',
+        };
+
+        const fragment: GPUFragmentState = {
+            module: decayModule,
+            entryPoint: 'fs_main',
+            targets: [colorState]
+        };
+
+        // Rasterization
+        const primitive: GPUPrimitiveState = {
+            frontFace: 'cw',
+            cullMode: 'none',
+            topology: 'triangle-list'
+        };
+
+        const pipelineDesc: GPURenderPipelineDescriptor = {
+            label: 'DecayPipeline',
+
+            layout: pipelineLayout,
+
+            vertex,
+            fragment,
+
+            primitive,
+        };
+        this.agentFieldPipeline = this.device.createRenderPipeline(pipelineDesc);
+    }
+
+    // Initialize resources to the final blit
+    initializeBlitResources() {
+        this.unitSquare = {
+            positionBuffer: createBuffer(this.device, unitSquareData.vertices, GPUBufferUsage.VERTEX),
+            uvBuffer: createBuffer(this.device, unitSquareData.uvs, GPUBufferUsage.VERTEX),
+            indexBuffer: createBuffer(this.device, unitSquareData.indices, GPUBufferUsage.INDEX),
+        };
+
+        // Shaders
+        this.blitModule = this.device.createShaderModule({
+            code: blitShaderCode,
+        });
+
+        // Graphics Pipeline
+
+        // Input Assembly
+        const positionAttribDesc: GPUVertexAttribute = {
+            shaderLocation: 0, // [[location(0)]]
+            offset: 0,
+            format: 'float32x3'
+        };
+        const positionBufferDesc: GPUVertexBufferLayout = {
+            attributes: [positionAttribDesc],
+            arrayStride: 4 * 3, // sizeof(float) * 3
+            stepMode: 'vertex'
+        };
+        const uvAttribDesc: GPUVertexAttribute = {
+            shaderLocation: 1, // [[location(1)]]
+            offset: 0,
+            format: 'float32x2'
+        };
+        const uvBufferDesc: GPUVertexBufferLayout = {
+            attributes: [uvAttribDesc],
+            arrayStride: 4 * 2, // sizeof(float) * 2
+            stepMode: 'vertex'
+        };
+
+        // Uniform Data
+        const bindGroupLayout = this.device.createBindGroupLayout({
+            label: 'BlitBindGroupLayout',
+            entries: [
+                { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+                { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+            ],
+        });
+        const pipelineLayoutDesc = { bindGroupLayouts: [bindGroupLayout] };
+        const pipelineLayout = this.device.createPipelineLayout(pipelineLayoutDesc);
+
+        // Shader Stages
         const vertex: GPUVertexState = {
             module: this.blitModule,
             entryPoint: 'vs_main',
-            buffers: [positionBufferDesc]
+            buffers: [positionBufferDesc, uvBufferDesc]
         };
 
-        // 🌀 Color/Blend State
+        // Color/Blend State
         const colorState: GPUColorTargetState = {
             format: navigator.gpu.getPreferredCanvasFormat(),
         };
@@ -135,7 +307,7 @@ export default class Renderer {
             targets: [colorState]
         };
 
-        // 🟨 Rasterization
+        // Rasterization
         const primitive: GPUPrimitiveState = {
             frontFace: 'cw',
             cullMode: 'none',
@@ -143,7 +315,9 @@ export default class Renderer {
         };
 
         const pipelineDesc: GPURenderPipelineDescriptor = {
-            layout,
+            label: 'BlitPipeline',
+
+            layout: pipelineLayout,
 
             vertex,
             fragment,
@@ -153,7 +327,7 @@ export default class Renderer {
         this.pipeline = this.device.createRenderPipeline(pipelineDesc);
     }
 
-    // ↙️ Resize swapchain, frame buffer attachments
+    // Resize swapchain, frame buffer attachments
     resizeBackings() {
         // ⛓️ Swapchain
         if (!this.context) {
@@ -170,8 +344,8 @@ export default class Renderer {
         }
     }
 
-    // ✍️ Write commands to send to the GPU
-    encodeCommands() {
+    // Encode commands for final screen draw
+    encodeBlitCommands() {
         let colorAttachment: GPURenderPassColorAttachment = {
             view: this.context.getCurrentTexture().createView(),
             clearValue: { r: 0, g: 0, b: 0, a: 1 },
@@ -183,12 +357,12 @@ export default class Renderer {
             colorAttachments: [colorAttachment],
         };
 
-        this.commandEncoder = this.device.createCommandEncoder();
+        const commandEncoder = this.device.createCommandEncoder();
 
-        // 🖌️ Encode drawing commands
-        this.passEncoder = this.commandEncoder.beginRenderPass(renderPassDesc);
-        this.passEncoder.setPipeline(this.pipeline);
-        this.passEncoder.setViewport(
+        // Encode drawing commands
+        const passEncoder = commandEncoder.beginRenderPass(renderPassDesc);
+        passEncoder.setPipeline(this.pipeline);
+        passEncoder.setViewport(
             0,
             0,
             this.canvas.width,
@@ -196,23 +370,25 @@ export default class Renderer {
             0,
             1
         );
-        this.passEncoder.setScissorRect(
+        passEncoder.setScissorRect(
             0,
             0,
             this.canvas.width,
             this.canvas.height
         );
-        this.passEncoder.setVertexBuffer(0, this.positionBuffer);
-        this.passEncoder.setIndexBuffer(this.indexBuffer, 'uint16');
-        this.passEncoder.drawIndexed(6, 1);
-        this.passEncoder.end();
+        passEncoder.setBindGroup(0, this.agentFieldTextures[this.pingpong].bindGroup);
+        passEncoder.setVertexBuffer(0, this.unitSquare.positionBuffer);
+        passEncoder.setVertexBuffer(1, this.unitSquare.uvBuffer);
+        passEncoder.setIndexBuffer(this.unitSquare.indexBuffer, 'uint16');
+        passEncoder.drawIndexed(6, 1);
+        passEncoder.end();
 
-        this.queue.submit([this.commandEncoder.finish()]);
+        this.queue.submit([commandEncoder.finish()]);
     }
 
     render = () => {
         // Write and submit commands to queue
-        this.encodeCommands();
+        this.encodeBlitCommands();
 
         // Refresh canvas
         requestAnimationFrame(this.render);
