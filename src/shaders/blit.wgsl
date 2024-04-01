@@ -23,5 +23,5 @@ fn vs_main(in: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
-    return vec4f(abs(in.uv), 1, 1);
+    return vec4(textureSample(fieldTexture, fieldSampler, in.uv).rgb, 1.0);
 }

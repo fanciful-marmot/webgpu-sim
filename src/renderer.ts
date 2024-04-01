@@ -204,6 +204,7 @@ export default class Renderer {
             createField(),
         ];
 
+        // Decay pipeline
         // Shader Stages
         const vertex: GPUVertexState = {
             module: decayModule,
@@ -344,6 +345,47 @@ export default class Renderer {
         }
     }
 
+    // Encodes commands to fade out the agent field
+    encodeDecayCommands() {
+        const commandEncoder = this.device.createCommandEncoder();
+
+        // Encode drawing commands
+        const passEncoder = commandEncoder.beginRenderPass({
+            label: 'DecayPass',
+            colorAttachments: [
+                {
+                    view: this.agentFieldTextures[(this.pingpong + 1) % 2].view,
+                    clearValue: { r: 0, g: 0, b: 0, a: 1 },
+                    loadOp: 'clear',
+                    storeOp: 'store'
+                }
+            ],
+        });
+        passEncoder.setPipeline(this.agentFieldPipeline);
+        passEncoder.setViewport(
+            0,
+            0,
+            AGENT_FIELD_SIZE,
+            AGENT_FIELD_SIZE,
+            0,
+            1
+        );
+        passEncoder.setScissorRect(
+            0,
+            0,
+            AGENT_FIELD_SIZE,
+            AGENT_FIELD_SIZE
+        );
+        passEncoder.setBindGroup(0, this.agentFieldTextures[this.pingpong].bindGroup);
+        passEncoder.setVertexBuffer(0, this.unitSquare.positionBuffer);
+        passEncoder.setVertexBuffer(1, this.unitSquare.uvBuffer);
+        passEncoder.setIndexBuffer(this.unitSquare.indexBuffer, 'uint16');
+        passEncoder.drawIndexed(6, 1);
+        passEncoder.end();
+
+        this.queue.submit([commandEncoder.finish()]);
+    }
+
     // Encode commands for final screen draw
     encodeBlitCommands() {
         let colorAttachment: GPURenderPassColorAttachment = {
@@ -388,7 +430,10 @@ export default class Renderer {
 
     render = () => {
         // Write and submit commands to queue
+        this.encodeDecayCommands();
         this.encodeBlitCommands();
+
+        this.pingpong = this.pingpong ? 0 : 1;
 
         // Refresh canvas
         requestAnimationFrame(this.render);
