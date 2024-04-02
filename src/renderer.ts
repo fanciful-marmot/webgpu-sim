@@ -1,5 +1,6 @@
 import blitShaderCode from './shaders/blit.wgsl';
 import decayShaderCode from './shaders/decay.wgsl';
+import agentComputeShaderCode from './shaders/agent-compute.wgsl';
 
 const unitSquareData = {
     vertices: new Float32Array([
@@ -38,8 +39,10 @@ const createBuffer = (
     return buffer;
 };
 
-const AGENT_FIELD_SIZE = 128;
-const NUM_AGENTS = 64;
+const AGENT_FIELD_SIZE = 512;
+const NUM_AGENTS = 512;
+const AGENTS_PER_GROUP = 64; // TODO: Update compute shader if this changes
+const NUM_GROUPS = Math.ceil(NUM_AGENTS / AGENTS_PER_GROUP);
 
 export default class Renderer {
     canvas: HTMLCanvasElement;
@@ -70,7 +73,12 @@ export default class Renderer {
     agentBuffers: Array<{
         buffer: GPUBuffer;
     }>;
+    agentBindGroups: Array<{
+        bindGroup: GPUBindGroup;
+    }>;
     agentFieldPipeline: GPURenderPipeline;
+    agentComputeParams: GPUBuffer;
+    agentComputePipeline: GPUComputePipeline;
 
     pingpong: 0 | 1 = 0;
 
@@ -101,7 +109,11 @@ export default class Renderer {
             this.adapter = await entry.requestAdapter();
 
             // 💻 Logical Device
-            this.device = await this.adapter.requestDevice({ requiredFeatures: ['float32-filterable'] as any });
+            this.device = await this.adapter.requestDevice({
+                requiredFeatures: [
+                    'float32-filterable',
+                ] as any,
+            });
 
             // 📦 Queue
             this.queue = this.device.queue;
@@ -118,19 +130,23 @@ export default class Renderer {
         const floatsPerAgent = 4;
         const agentData = new Float32Array(NUM_AGENTS * floatsPerAgent);
         for (let i = 0; i < NUM_AGENTS; i += floatsPerAgent) {
-            agentData[i + 0] = 0; // pos.x
-            agentData[i + 1] = 0; // pos.y
-            agentData[i + 2] = 0; // vel.x
-            agentData[i + 3] = 0; // vel.y
+            const angle = Math.random() * 2 * Math.PI;
+            agentData[i + 0] = Math.random() * AGENT_FIELD_SIZE; // pos.x
+            agentData[i + 1] = Math.random() * AGENT_FIELD_SIZE; // pos.y
+            agentData[i + 2] = Math.sin(angle) * AGENT_FIELD_SIZE / 10.0; // vel.x
+            agentData[i + 3] = Math.cos(angle) * AGENT_FIELD_SIZE / 10.0; // vel.y
         }
         this.agentBuffers = [
-            { buffer: createBuffer(this.device, agentData, GPUBufferUsage.VERTEX) },
-            { buffer: createBuffer(this.device, agentData, GPUBufferUsage.VERTEX) },
+            { buffer: createBuffer(this.device, agentData, GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE) },
+            { buffer: createBuffer(this.device, agentData, GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE) },
         ];
 
         // Shaders
         const decayModule = this.device.createShaderModule({
             code: decayShaderCode,
+        });
+        const computeModule = this.device.createShaderModule({
+            code: agentComputeShaderCode,
         });
 
         // Graphics Pipeline
@@ -165,17 +181,21 @@ export default class Renderer {
                 { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
             ],
         });
-        const pipelineLayoutDesc = { bindGroupLayouts: [bindGroupLayout] };
-        const pipelineLayout = this.device.createPipelineLayout(pipelineLayoutDesc);
+        const pipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] });
 
         // Create field textures
         const baseFieldData = new Float32Array(AGENT_FIELD_SIZE * AGENT_FIELD_SIZE * 4);
-        baseFieldData.fill(1.0);
+        baseFieldData.fill(0.2);
+        const temp = (10 + 10 * AGENT_FIELD_SIZE) * 4;
+        baseFieldData[temp] = 1.0;
+        baseFieldData[temp + 1] = 0.0;
+        baseFieldData[temp + 2] = 0.0;
+        baseFieldData[temp + 3] = 1.0;
 
         const fieldDescriptor: GPUTextureDescriptor = {
             label: 'AgentFieldTexture',
             size: [AGENT_FIELD_SIZE, AGENT_FIELD_SIZE, 1],
-            usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_DST | GPUTextureUsage.TEXTURE_BINDING,
+            usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_DST | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING,
             format: 'rgba32float',
         };
         const sampler = this.device.createSampler();
@@ -240,6 +260,102 @@ export default class Renderer {
             primitive,
         };
         this.agentFieldPipeline = this.device.createRenderPipeline(pipelineDesc);
+
+        // TODO: SimParams uniforms
+
+        // Agent update pipeline
+        const computeBindGroupLayout = this.device.createBindGroupLayout({
+            label: 'AgentUpdate',
+            entries: [
+                {
+                    binding: 0,
+                    visibility: GPUShaderStage.COMPUTE,
+                    buffer: {
+                        type: 'uniform',
+                        minBindingSize: 4,
+                    },
+                },
+                {
+                    binding: 1,
+                    visibility: GPUShaderStage.COMPUTE,
+                    buffer: {
+                        type: 'read-only-storage',
+                        minBindingSize: NUM_AGENTS * 4 * 4,
+                    },
+                },
+                {
+                    binding: 2,
+                    visibility: GPUShaderStage.COMPUTE,
+                    buffer: {
+                        type: 'storage',
+                        minBindingSize: NUM_AGENTS * 4 * 4,
+                    },
+                },
+                {
+                    binding: 3,
+                    visibility: GPUShaderStage.COMPUTE,
+                    storageTexture: {
+                        format: 'rgba32float',
+                        viewDimension: '2d',
+                    },
+                },
+                {
+                    binding: 4,
+                    visibility: GPUShaderStage.COMPUTE,
+                    storageTexture: {
+                        access: 'write-only',
+                        format: 'rgba32float',
+                        viewDimension: '2d',
+                    },
+                },
+            ]
+        });
+
+        this.agentComputeParams = createBuffer(this.device, new Float32Array([16.6 / 1000]), GPUBufferUsage.UNIFORM);
+        this.agentBindGroups = (new Array(2).fill(0)).map((_, i) => {
+            const textureData = this.agentFieldTextures[i];
+            const nextTextureData = this.agentFieldTextures[(i + 1) % 2];
+            const agentData = this.agentBuffers[i];
+            const nextAgentData = this.agentBuffers[(i + 1) % 2];
+
+            return {
+                bindGroup: this.device.createBindGroup({
+                    label: `AgentCompute${i}`,
+                    layout: computeBindGroupLayout,
+                    entries: [
+                        {
+                            binding: 0,
+                            resource: { buffer: this.agentComputeParams },
+                        },
+                        {
+                            binding: 1,
+                            resource: { buffer: agentData.buffer },
+                        },
+                        {
+                            binding: 2,
+                            resource: { buffer: nextAgentData.buffer },
+                        },
+                        {
+                            binding: 3,
+                            resource: textureData.view,
+                        },
+                        {
+                            binding: 4,
+                            resource: nextTextureData.view,
+                        },
+                    ]
+                })
+            }
+        });
+
+        this.agentComputePipeline = this.device.createComputePipeline({
+            label: 'AgentCompute',
+            compute: {
+                module: computeModule,
+                entryPoint: 'compute_main',
+            },
+            layout: this.device.createPipelineLayout({ bindGroupLayouts: [computeBindGroupLayout] }),
+        });
     }
 
     // Initialize resources to the final blit
@@ -345,6 +461,19 @@ export default class Renderer {
         }
     }
 
+    encodeAgentComputeCommands() {
+        // TODO: Do these all with one encoder?
+        const encoder = this.device.createCommandEncoder({ label: 'AgentCompute' });
+
+        const pass = encoder.beginComputePass();
+        pass.setPipeline(this.agentComputePipeline);
+        pass.setBindGroup(0, this.agentBindGroups[this.pingpong].bindGroup);
+        pass.dispatchWorkgroups(NUM_GROUPS, 1, 1);
+        pass.end();
+
+        this.queue.submit([encoder.finish()]);
+    }
+
     // Encodes commands to fade out the agent field
     encodeDecayCommands() {
         const commandEncoder = this.device.createCommandEncoder();
@@ -431,6 +560,7 @@ export default class Renderer {
     render = () => {
         // Write and submit commands to queue
         this.encodeDecayCommands();
+        this.encodeAgentComputeCommands();
         this.encodeBlitCommands();
 
         this.pingpong = this.pingpong ? 0 : 1;
