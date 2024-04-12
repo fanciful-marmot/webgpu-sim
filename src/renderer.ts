@@ -40,7 +40,7 @@ const createBuffer = (
 };
 
 const AGENT_FIELD_SIZE = 512;
-const NUM_AGENTS = 512;
+const NUM_AGENTS = 128;
 const AGENTS_PER_GROUP = 64; // TODO: Update compute shader if this changes
 const NUM_GROUPS = Math.ceil(NUM_AGENTS / AGENTS_PER_GROUP);
 
@@ -165,7 +165,7 @@ export default class Renderer {
         // Create the agent buffers
         const floatsPerAgent = 4;
         const agentData = new Float32Array(NUM_AGENTS * floatsPerAgent);
-        for (let i = 0; i < NUM_AGENTS; i += floatsPerAgent) {
+        for (let i = 0; i < NUM_AGENTS * floatsPerAgent; i += floatsPerAgent) {
             const angle = Math.random() * 2 * Math.PI;
             agentData[i + 0] = Math.random() * AGENT_FIELD_SIZE; // pos.x
             agentData[i + 1] = Math.random() * AGENT_FIELD_SIZE; // pos.y

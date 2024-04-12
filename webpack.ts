@@ -10,6 +10,7 @@ let isProduction =
 
 let config: webpack.Configuration = {
     context: path.join(__dirname, 'src'),
+    devtool: isProduction ? undefined : 'eval-source-map',
     entry: {
         app: './main.ts'
     },
@@ -77,11 +78,11 @@ if (!argv.reduce((prev, cur) => prev || cur === '--watch', false)) {
         }
         console.log(
             '✔️️' +
-                '  · Success · ' +
-                'webgpu-seed' +
-                (isProduction ? ' (production) ' : ' (development) ') +
-                'built in ' +
-                (+stats.endTime - +stats.startTime + ' ms.')
+            '  · Success · ' +
+            'webgpu-seed' +
+            (isProduction ? ' (production) ' : ' (development) ') +
+            'built in ' +
+            (+stats.endTime - +stats.startTime + ' ms.')
         );
     });
 } else {
@@ -101,12 +102,12 @@ if (!argv.reduce((prev, cur) => prev || cur === '--watch', false)) {
         }
         console.log(
             '✔️️' +
-                '  · Success · ' +
-                'webgpu-seed' +
-                (isProduction ? ' (production) ' : ' (development) ') +
-                'built in ' +
-                (+stats.endTime - +stats.startTime + ' ms.') +
-                '\n👀  · Watching for changes... · \n'
+            '  · Success · ' +
+            'webgpu-seed' +
+            (isProduction ? ' (production) ' : ' (development) ') +
+            'built in ' +
+            (+stats.endTime - +stats.startTime + ' ms.') +
+            '\n👀  · Watching for changes... · \n'
         );
     });
 }

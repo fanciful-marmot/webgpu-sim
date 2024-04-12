@@ -1,7 +1,7 @@
 {
-    "name": "webgpu-seed",
+    "name": "webgpu-sim",
     "version": "0.1.0",
-    "description": "🔺 A simple hello triangle example introducing WebGPU.",
+    "description": "A simple webgpu sim",
     "main": "dist/main.js",
     "scripts": {
         "start": "npm i && npm run build && npm run dev",
@@ -11,22 +11,12 @@
     },
     "repository": {
         "type": "git",
-        "url": "git+https://github.com/alaingalvan/webgpu-seed.git"
+        "url": "git+https://github.com/fanciful-marmot/webgpu-sim.git"
     },
-    "keywords": [
-        "webgpu",
-        "webgl",
-        "example",
-        "seed",
-        "types",
-        "typescript"
-    ],
-    "author": "Alain Galvan",
+    "keywords": [],
+    "author": "fanciful-marmot",
     "license": "Unlicense",
-    "bugs": {
-        "url": "https://github.com/alaingalvan/webgpu-seed/issues"
-    },
-    "homepage": "https://github.com/alaingalvan/webgpu-seed#readme",
+    "homepage": "https://github.com/fanciful-marmot/webgpu-sim#readme",
     "devDependencies": {
         "@types/node": "^18.11.x",
         "@webgpu/types": "^0.1.26",
