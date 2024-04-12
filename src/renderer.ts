@@ -65,6 +65,12 @@ export default class Renderer {
     blitModule: GPUShaderModule;
     pipeline: GPURenderPipeline;
 
+    // Sim
+    simParamsUniformLayout: GPUBindGroupLayout;
+    simParamBindGroup: GPUBindGroup;
+    simParamValues: Float32Array;
+    simParamBuffer: GPUBuffer;
+
     // Agent resources
     agentFieldTextures: Array<{
         texture: GPUTexture;
@@ -74,10 +80,7 @@ export default class Renderer {
     agentBuffers: Array<{
         buffer: GPUBuffer;
     }>;
-    agentSimParamValues: Float32Array;
-    agentSimParamBuffer: GPUBuffer;
     agentBindGroups: Array<{
-        uniformBindGroup: GPUBindGroup;
         bindGroup: GPUBindGroup;
     }>;
     agentFieldPipeline: GPURenderPipeline;
@@ -93,6 +96,7 @@ export default class Renderer {
     async start() {
         if (await this.initializeAPI()) {
             this.resizeBackings();
+            this.initializeSimParams();
             this.initializeBlitResources();
             this.initializeAgentResources();
             this.render();
@@ -126,6 +130,35 @@ export default class Renderer {
         }
 
         return true;
+    }
+
+    initializeSimParams() {
+        // SimParams uniforms
+        this.simParamValues = new Float32Array([Math.random(), 16.6 / 1000]);
+        this.simParamBuffer = createBuffer(this.device, this.simParamValues, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST);
+        this.simParamsUniformLayout = this.device.createBindGroupLayout({
+            label: 'AgentSimParams',
+            entries: [
+                {
+                    binding: 0,
+                    visibility: GPUShaderStage.COMPUTE | GPUShaderStage.FRAGMENT,
+                    buffer: {
+                        type: 'uniform',
+                        minBindingSize: 8,
+                    },
+                },
+            ]
+        });
+        this.simParamBindGroup = this.device.createBindGroup({
+            label: `SimParamUniforms`,
+            layout: this.simParamsUniformLayout,
+            entries: [
+                {
+                    binding: 0,
+                    resource: { buffer: this.simParamBuffer },
+                },
+            ]
+        });
     }
 
     initializeAgentResources() {
@@ -184,16 +217,11 @@ export default class Renderer {
                 { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
             ],
         });
-        const pipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] });
+        const pipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [this.simParamsUniformLayout, bindGroupLayout] });
 
         // Create field textures
         const baseFieldData = new Float32Array(AGENT_FIELD_SIZE * AGENT_FIELD_SIZE * 4);
-        baseFieldData.fill(0.2);
-        const temp = (10 + 10 * AGENT_FIELD_SIZE) * 4;
-        baseFieldData[temp] = 1.0;
-        baseFieldData[temp + 1] = 0.0;
-        baseFieldData[temp + 2] = 0.0;
-        baseFieldData[temp + 3] = 1.0;
+        baseFieldData.fill(0);
 
         const fieldDescriptor: GPUTextureDescriptor = {
             label: 'AgentFieldTexture',
@@ -264,21 +292,6 @@ export default class Renderer {
         };
         this.agentFieldPipeline = this.device.createRenderPipeline(pipelineDesc);
 
-        // SimParams uniforms
-        const computeSimParamsUniformLayout = this.device.createBindGroupLayout({
-            label: 'AgentSimParams',
-            entries: [
-                {
-                    binding: 0,
-                    visibility: GPUShaderStage.COMPUTE,
-                    buffer: {
-                        type: 'uniform',
-                        minBindingSize: 8,
-                    },
-                },
-            ]
-        });
-
         // Agent update pipeline
         const computeBindGroupLayout = this.device.createBindGroupLayout({
             label: 'AgentUpdate',
@@ -319,8 +332,6 @@ export default class Renderer {
             ]
         });
 
-        this.agentSimParamValues = new Float32Array([Math.random(), 16.6 / 1000]);
-        this.agentSimParamBuffer = createBuffer(this.device, this.agentSimParamValues, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST);
         this.agentBindGroups = (new Array(2).fill(0)).map((_, i) => {
             const textureData = this.agentFieldTextures[i];
             const nextTextureData = this.agentFieldTextures[(i + 1) % 2];
@@ -328,16 +339,6 @@ export default class Renderer {
             const nextAgentData = this.agentBuffers[(i + 1) % 2];
 
             return {
-                uniformBindGroup: this.device.createBindGroup({
-                    label: `AgentComputeUniforms${i}`,
-                    layout: computeSimParamsUniformLayout,
-                    entries: [
-                        {
-                            binding: 0,
-                            resource: { buffer: this.agentSimParamBuffer },
-                        },
-                    ]
-                }),
                 bindGroup: this.device.createBindGroup({
                     label: `AgentCompute${i}`,
                     layout: computeBindGroupLayout,
@@ -369,7 +370,7 @@ export default class Renderer {
                 module: computeModule,
                 entryPoint: 'compute_main',
             },
-            layout: this.device.createPipelineLayout({ bindGroupLayouts: [computeSimParamsUniformLayout, computeBindGroupLayout] }),
+            layout: this.device.createPipelineLayout({ bindGroupLayouts: [this.simParamsUniformLayout, computeBindGroupLayout] }),
         });
     }
 
@@ -476,14 +477,10 @@ export default class Renderer {
         }
     }
 
-    encodeAgentComputeCommands(encoder: GPUCommandEncoder, deltaT: DOMHighResTimeStamp) {
-        // Update uniforms
-        this.agentSimParamValues.set([Math.random(), deltaT]);
-        this.device.queue.writeBuffer(this.agentSimParamBuffer, 0, this.agentSimParamValues);
-
+    encodeAgentComputeCommands(encoder: GPUCommandEncoder) {
         const pass = encoder.beginComputePass({ label: 'AgentCompute' });
         pass.setPipeline(this.agentComputePipeline);
-        pass.setBindGroup(0, this.agentBindGroups[this.pingpong].uniformBindGroup);
+        pass.setBindGroup(0, this.simParamBindGroup);
         pass.setBindGroup(1, this.agentBindGroups[this.pingpong].bindGroup);
         pass.dispatchWorkgroups(NUM_GROUPS, 1, 1);
         pass.end();
@@ -492,7 +489,7 @@ export default class Renderer {
     // Encodes commands to fade out the agent field
     encodeDecayCommands(encoder: GPUCommandEncoder) {
         // Encode drawing commands
-        const passEncoder = encoder.beginRenderPass({
+        const pass = encoder.beginRenderPass({
             label: 'DecayPass',
             colorAttachments: [
                 {
@@ -503,8 +500,8 @@ export default class Renderer {
                 }
             ],
         });
-        passEncoder.setPipeline(this.agentFieldPipeline);
-        passEncoder.setViewport(
+        pass.setPipeline(this.agentFieldPipeline);
+        pass.setViewport(
             0,
             0,
             AGENT_FIELD_SIZE,
@@ -512,18 +509,19 @@ export default class Renderer {
             0,
             1
         );
-        passEncoder.setScissorRect(
+        pass.setScissorRect(
             0,
             0,
             AGENT_FIELD_SIZE,
             AGENT_FIELD_SIZE
         );
-        passEncoder.setBindGroup(0, this.agentFieldTextures[this.pingpong].bindGroup);
-        passEncoder.setVertexBuffer(0, this.unitSquare.positionBuffer);
-        passEncoder.setVertexBuffer(1, this.unitSquare.uvBuffer);
-        passEncoder.setIndexBuffer(this.unitSquare.indexBuffer, 'uint16');
-        passEncoder.drawIndexed(6, 1);
-        passEncoder.end();
+        pass.setBindGroup(0, this.simParamBindGroup);
+        pass.setBindGroup(1, this.agentFieldTextures[this.pingpong].bindGroup);
+        pass.setVertexBuffer(0, this.unitSquare.positionBuffer);
+        pass.setVertexBuffer(1, this.unitSquare.uvBuffer);
+        pass.setIndexBuffer(this.unitSquare.indexBuffer, 'uint16');
+        pass.drawIndexed(6, 1);
+        pass.end();
     }
 
     // Encode commands for final screen draw
@@ -570,13 +568,17 @@ export default class Renderer {
         const deltaT = Math.min(17, (time - this.previousFrameTimestamp)) / 1000; // In seconds
         this.previousFrameTimestamp = time;
 
+        // Update uniforms
+        this.simParamValues.set([Math.random(), deltaT]);
+        this.device.queue.writeBuffer(this.simParamBuffer, 0, this.simParamValues);
+
         // Write and submit commands to queue
         // TODO: Use a single encoder?
         // this.queue.submit([this.encodeDecayCommands(), this.encodeAgentComputeCommands(deltaT), this.encodeBlitCommands()]);
         const commandEncoder = this.device.createCommandEncoder();
 
         this.encodeDecayCommands(commandEncoder);
-        this.encodeAgentComputeCommands(commandEncoder, deltaT);
+        this.encodeAgentComputeCommands(commandEncoder);
         this.encodeBlitCommands(commandEncoder);
 
         this.device.queue.submit([commandEncoder.finish()]);
