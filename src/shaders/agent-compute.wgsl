@@ -6,13 +6,8 @@ struct Agent {
 };
 
 struct SimParams {
+    randomSeed: f32,
     deltaT: f32,
-//     rule1Distance: f32,
-//     rule2Distance: f32,
-//     rule3Distance: f32,
-//     rule1Scale: f32,
-//     rule2Scale: f32,
-//     rule3Scale: f32,
 };
 
 struct ComputeIn {
@@ -20,19 +15,21 @@ struct ComputeIn {
 };
 
 @group(0) @binding(0) var<uniform> params : SimParams;
-@group(0) @binding(1) var<storage, read> agentsSrc : array<Agent>;
-@group(0) @binding(2) var<storage, read_write> agentsDst : array<Agent>;
-@group(0) @binding(3) var fieldSrc : texture_2d<f32>;
-@group(0) @binding(4) var fieldDst : texture_storage_2d<rgba32float, write>;
+@group(1) @binding(0) var<storage, read> agentsSrc : array<Agent>;
+@group(1) @binding(1) var<storage, read_write> agentsDst : array<Agent>;
+@group(1) @binding(2) var fieldSrc : texture_2d<f32>;
+@group(1) @binding(3) var fieldDst : texture_storage_2d<rgba32float, write>;
 
 // const PI: f32 = 3.14159274;
 const TWO_PI: f32 = 6.28318548;
 const AGENT_FIELD_SIZE: f32 = 512.0;
 const AGENT_SPEED: f32 = AGENT_FIELD_SIZE / 10.0; // field units/second
+const FIELD_MIN: vec2<f32> = vec2(0.0);
+const FIELD_MAX: vec2<f32> = vec2(AGENT_FIELD_SIZE);
 
 // https://gist.github.com/patriciogonzalezvivo/670c22f3966e662d2f83
 fn rand(n: f32) -> f32 {
-    return fract(sin(n) * 43758.5453123);
+    return fract(sin(n + params.randomSeed) * 43758.5453123);
 }
 
 fn random_angle(in: f32) -> vec2<f32> {
@@ -57,13 +54,12 @@ fn compute_main(in: ComputeIn) {
     var vel = agentsSrc[index].vel;
     var pos = agentsSrc[index].pos + vel * params.deltaT;
 
-
     // // Keep particles in bounds
     if pos.x < 0 || pos.x > AGENT_FIELD_SIZE || pos.y < 0 || pos.y > AGENT_FIELD_SIZE {
-        pos = clamp(pos, vec2<f32>(0, 0), vec2<f32>(AGENT_FIELD_SIZE, AGENT_FIELD_SIZE)); // Reset position and pick a new angle
+        pos = clamp(pos, FIELD_MIN, FIELD_MAX); // Reset position and pick a new angle
 
         // Random bounce angle
-        vel = random_angle(vel.x + vel.y);
+        vel = random_angle(vel.x + vel.y + f32(in.global_invocation_id.x));
         // vel = -vel;
     }
 
