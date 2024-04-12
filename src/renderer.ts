@@ -566,7 +566,8 @@ export default class Renderer {
     }
 
     render = (time: DOMHighResTimeStamp = 0) => {
-        const deltaT = (time - this.previousFrameTimestamp) / 1000; // In seconds
+        // Clamp deltaT at 17ms. Avoids huge jump if tab loses focus and then returns
+        const deltaT = Math.min(17, (time - this.previousFrameTimestamp)) / 1000; // In seconds
         this.previousFrameTimestamp = time;
 
         // Write and submit commands to queue
