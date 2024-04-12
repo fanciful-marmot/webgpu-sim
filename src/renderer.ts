@@ -40,7 +40,7 @@ const createBuffer = (
 };
 
 const AGENT_FIELD_SIZE = 512;
-const NUM_AGENTS = 128;
+const NUM_AGENTS = 256;
 const AGENTS_PER_GROUP = 64; // TODO: Update compute shader if this changes
 const NUM_GROUPS = Math.ceil(NUM_AGENTS / AGENTS_PER_GROUP);
 
@@ -166,11 +166,10 @@ export default class Renderer {
         const floatsPerAgent = 4;
         const agentData = new Float32Array(NUM_AGENTS * floatsPerAgent);
         for (let i = 0; i < NUM_AGENTS * floatsPerAgent; i += floatsPerAgent) {
-            const angle = Math.random() * 2 * Math.PI;
             agentData[i + 0] = Math.random() * AGENT_FIELD_SIZE; // pos.x
             agentData[i + 1] = Math.random() * AGENT_FIELD_SIZE; // pos.y
-            agentData[i + 2] = Math.sin(angle) * AGENT_FIELD_SIZE / 10.0; // vel.x
-            agentData[i + 3] = Math.cos(angle) * AGENT_FIELD_SIZE / 10.0; // vel.y
+            agentData[i + 2] = Math.random() * 2 * Math.PI; // angle
+            agentData[i + 3] = 0; // Alignment
         }
         this.agentBuffers = [
             { buffer: createBuffer(this.device, agentData, GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE) },
@@ -301,7 +300,7 @@ export default class Renderer {
                     visibility: GPUShaderStage.COMPUTE,
                     buffer: {
                         type: 'read-only-storage',
-                        minBindingSize: NUM_AGENTS * 4 * 4,
+                        minBindingSize: NUM_AGENTS * floatsPerAgent * 4,
                     },
                 },
                 {
@@ -309,14 +308,13 @@ export default class Renderer {
                     visibility: GPUShaderStage.COMPUTE,
                     buffer: {
                         type: 'storage',
-                        minBindingSize: NUM_AGENTS * 4 * 4,
+                        minBindingSize: NUM_AGENTS * floatsPerAgent * 4,
                     },
                 },
                 {
                     binding: 2,
                     visibility: GPUShaderStage.COMPUTE,
-                    storageTexture: {
-                        format: 'rgba32float',
+                    texture: {
                         viewDimension: '2d',
                     },
                 },

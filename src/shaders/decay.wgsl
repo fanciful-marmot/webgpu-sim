@@ -28,7 +28,7 @@ struct SimParams {
 @group(1) @binding(0) var fieldSampler: sampler;
 @group(1) @binding(1) var fieldTexture: texture_2d<f32>;
 
-const DECAY_RATE = 0.06; // units/second
+const DECAY_RATE = 0.1; // units/second
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
@@ -47,7 +47,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     color_out += sum / 9.0;
 
     // Decay
-    color_out = max(vec4(), color_out - vec4(DECAY_RATE) * params.deltaT);
+    color_out = clamp(color_out - vec4(DECAY_RATE) * params.deltaT, vec4(), vec4(1.0));
 
     return color_out;
 }

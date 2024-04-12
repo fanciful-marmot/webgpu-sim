@@ -2,7 +2,8 @@
 
 struct Agent {
     pos: vec2<f32>,
-    vel: vec2<f32>,
+    angle: f32,
+    t: f32,
 };
 
 struct SimParams {
@@ -20,25 +21,49 @@ struct ComputeIn {
 @group(1) @binding(2) var fieldSrc : texture_2d<f32>;
 @group(1) @binding(3) var fieldDst : texture_storage_2d<rgba32float, write>;
 
-// const PI: f32 = 3.14159274;
+const PI: f32 = 3.14159274;
 const TWO_PI: f32 = 6.28318548;
 const AGENT_FIELD_SIZE: f32 = 512.0;
 const AGENT_SPEED: f32 = AGENT_FIELD_SIZE / 10.0; // field units/second
+const AGENT_TURN_SPEED: f32 = PI * 2; // Radians per second
+const SENSOR_ANGLE: f32 = PI / 180 * 50; // Radians
+const SENSOR_LENGTH: f32 = 5; // field units
+const SENSOR_SIZE: i32 = 2; // field units
 const FIELD_MIN: vec2<f32> = vec2(0.0);
 const FIELD_MAX: vec2<f32> = vec2(AGENT_FIELD_SIZE);
+
 
 // https://gist.github.com/patriciogonzalezvivo/670c22f3966e662d2f83
 fn rand(n: f32) -> f32 {
     return fract(sin(n + params.randomSeed) * 43758.5453123);
 }
 
-fn random_angle(in: f32) -> vec2<f32> {
-    let angle = rand(in) * TWO_PI;
+fn random_angle(in: f32) -> f32 {
+    return rand(in) * TWO_PI;
+}
 
+fn velocity_from_angle(angle: f32) -> vec2<f32> {
     return vec2<f32>(
         cos(angle),
         sin(angle),
     ) * AGENT_SPEED;
+}
+
+fn sense(agent: Agent, angle_offset: f32) -> f32 {
+    var angle = agent.angle + angle_offset;
+    var direction = vec2f(cos(angle), sin(angle));
+    var sensor_center = agent.pos + direction * SENSOR_LENGTH;
+
+    var sum = 0.0;
+    for (var i = -SENSOR_SIZE; i <= SENSOR_SIZE; i++) {
+        for (var j = -SENSOR_SIZE; j <= SENSOR_SIZE; j++) {
+            var pos = sensor_center + vec2f(f32(i), f32(j));
+
+            sum += textureLoad(fieldSrc, vec2<u32>(pos), 0).r;
+        }
+    }
+
+    return sum;
 }
 
 @compute
@@ -51,23 +76,47 @@ fn compute_main(in: ComputeIn) {
         return;
     }
 
-    var vel = agentsSrc[index].vel;
-    var pos = agentsSrc[index].pos + vel * params.deltaT;
+    var agent = agentsSrc[index];
+    var pos = agent.pos;
+    var angle = agent.angle;
+    var rand_seed = angle + pos.x + pos.y + f32(in.global_invocation_id.x);
 
-    // // Keep particles in bounds
+    // Sense trails
+    var forwardWeight = sense(agent, 0);
+    var leftWeight = sense(agent, SENSOR_ANGLE);
+    var rightWeight = sense(agent, -SENSOR_ANGLE);
+
+    var steeringStrength = rand(rand_seed);
+
+    if forwardWeight > leftWeight && forwardWeight > rightWeight {
+        // Do nothing
+    } else if forwardWeight < leftWeight && forwardWeight > rightWeight {
+        // Turn randomly
+        angle += (steeringStrength - 0.5) * 2 * AGENT_TURN_SPEED * params.deltaT;
+    } else if rightWeight > leftWeight {
+        // Turn right
+        angle -= steeringStrength * AGENT_TURN_SPEED * params.deltaT;
+    } else if leftWeight > rightWeight {
+        // Turn left
+        angle += steeringStrength * AGENT_TURN_SPEED * params.deltaT;
+    }
+
+    // Move agent
+    pos += velocity_from_angle(angle) * params.deltaT;
+
+    // Keep particles in bounds
     if pos.x < 0 || pos.x > AGENT_FIELD_SIZE || pos.y < 0 || pos.y > AGENT_FIELD_SIZE {
         pos = clamp(pos, FIELD_MIN, FIELD_MAX); // Reset position and pick a new angle
 
         // Random bounce angle
-        vel = random_angle(vel.x + vel.y + f32(in.global_invocation_id.x));
-        // vel = -vel;
+        angle = random_angle(rand_seed);
     }
 
-
-    // // Update agent
-    agentsDst[index] = Agent(pos, vel);
+    // Update agent
+    agentsDst[index] = Agent(pos, angle, 0);
 
     // Write data to field
     // textureStore(fieldDst, vec2<u32>(12, 12), vec4<f32>(1.0));
-    textureStore(fieldDst, vec2<i32>(pos), vec4(1.0));
+    // textureStore(fieldDst, vec2<i32>(pos), vec4(vec3f(1.0, leftWeight, rightWeight), 1.0));
+    textureStore(fieldDst, vec2<i32>(pos), vec4(vec3f(1.0, leftWeight, rightWeight), 1.0));
 }
