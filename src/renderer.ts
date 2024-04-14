@@ -40,7 +40,7 @@ const createBuffer = (
 };
 
 const AGENT_FIELD_SIZE = 512;
-const NUM_AGENTS = 256;
+const NUM_AGENTS = 128;
 const AGENTS_PER_GROUP = 64; // TODO: Update compute shader if this changes
 const NUM_GROUPS = Math.ceil(NUM_AGENTS / AGENTS_PER_GROUP);
 
