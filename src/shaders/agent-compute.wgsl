@@ -23,15 +23,14 @@ struct ComputeIn {
 
 const PI: f32 = 3.14159274;
 const TWO_PI: f32 = 6.28318548;
-const AGENT_FIELD_SIZE: f32 = 512.0;
-const AGENT_SPEED: f32 = AGENT_FIELD_SIZE / 10.0; // field units/second
-const AGENT_TURN_SPEED: f32 = PI * 2; // Radians per second
-const SENSOR_ANGLE: f32 = PI / 180 * 50; // Radians
-const SENSOR_LENGTH: f32 = 5; // field units
-const SENSOR_SIZE: i32 = 2; // field units
+const AGENT_FIELD_SIZE: f32 = 1240;
+const SENSOR_ANGLE: f32 = PI / 180 * 45; // Radians
+const SENSOR_LENGTH: f32 = 10; // field units
+const SENSOR_SIZE: i32 = 1; // field units
+const AGENT_SPEED: f32 = 100; // field units/second
+const AGENT_TURN_SPEED: f32 = 15 * PI * 2; // Radians per second
 const FIELD_MIN: vec2<f32> = vec2(0.0);
 const FIELD_MAX: vec2<f32> = vec2(AGENT_FIELD_SIZE);
-
 
 // https://gist.github.com/patriciogonzalezvivo/670c22f3966e662d2f83
 fn rand(n: f32) -> f32 {
@@ -117,6 +116,6 @@ fn compute_main(in: ComputeIn) {
 
     // Write data to field
     // textureStore(fieldDst, vec2<u32>(12, 12), vec4<f32>(1.0));
-    // textureStore(fieldDst, vec2<i32>(pos), vec4(vec3f(1.0, leftWeight, rightWeight), 1.0));
-    textureStore(fieldDst, vec2<i32>(pos), vec4(vec3f(1.0, leftWeight, rightWeight), 1.0));
+    textureStore(fieldDst, vec2<i32>(pos), vec4(vec3f(1.0), 1.0));
+    // textureStore(fieldDst, vec2<i32>(pos), vec4(saturate(vec3f(1.0, leftWeight, rightWeight)), 1.0));
 }

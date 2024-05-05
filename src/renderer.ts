@@ -1,6 +1,7 @@
 import blitShaderCode from './shaders/blit.wgsl';
 import decayShaderCode from './shaders/decay.wgsl';
 import agentComputeShaderCode from './shaders/agent-compute.wgsl';
+import { randomPoint } from './utils';
 
 const unitSquareData = {
     vertices: new Float32Array([
@@ -39,8 +40,8 @@ const createBuffer = (
     return buffer;
 };
 
-const AGENT_FIELD_SIZE = 512;
-const NUM_AGENTS = 128;
+const AGENT_FIELD_SIZE = 1240;
+const NUM_AGENTS = 10000;
 const AGENTS_PER_GROUP = 64; // TODO: Update compute shader if this changes
 const NUM_GROUPS = Math.ceil(NUM_AGENTS / AGENTS_PER_GROUP);
 
@@ -166,9 +167,12 @@ export default class Renderer {
         const floatsPerAgent = 4;
         const agentData = new Float32Array(NUM_AGENTS * floatsPerAgent);
         for (let i = 0; i < NUM_AGENTS * floatsPerAgent; i += floatsPerAgent) {
-            agentData[i + 0] = Math.random() * AGENT_FIELD_SIZE; // pos.x
-            agentData[i + 1] = Math.random() * AGENT_FIELD_SIZE; // pos.y
-            agentData[i + 2] = Math.random() * 2 * Math.PI; // angle
+            const { x, y } = randomPoint();
+            const angle = Math.atan2(y, x);
+            // const angle = Math.random() * 2 * Math.PI
+            agentData[i + 0] = x * AGENT_FIELD_SIZE * 0.75 + AGENT_FIELD_SIZE * 0.5; // pos.x
+            agentData[i + 1] = y * AGENT_FIELD_SIZE * 0.75 + AGENT_FIELD_SIZE * 0.5; // pos.y
+            agentData[i + 2] = angle + Math.PI; // angle
             agentData[i + 3] = 0; // Alignment
         }
         this.agentBuffers = [

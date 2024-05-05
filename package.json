@@ -19,6 +19,7 @@
     "license": "Unlicense",
     "homepage": "https://github.com/fanciful-marmot/webgpu-sim#readme",
     "devDependencies": {
+        "@tweakpane/core": "2.0.3",
         "@types/node": "^18.11.x",
         "@webgpu/types": "^0.1.26",
         "clean-webpack-plugin": "^4.0.x",
@@ -30,6 +31,7 @@
         "webpack": "^5.75.x"
     },
     "dependencies": {
-        "gl-matrix": "^3.4.3"
+        "gl-matrix": "^3.4.3",
+        "tweakpane": "4.0.3"
     }
 }
