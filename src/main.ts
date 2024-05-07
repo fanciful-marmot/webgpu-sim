@@ -1,4 +1,4 @@
-import { Pane, TpChangeEvent } from 'tweakpane';
+import { Pane } from 'tweakpane';
 import Renderer from './renderer';
 
 const canvas = document.getElementById('gfx') as HTMLCanvasElement;
@@ -26,6 +26,7 @@ renderer.start();
 // Connect knobs
 const PARAMS = {
   decayRate: 0.25,
+  turnSpeed: 13,
   agentSpeed: 100,
 };
 
@@ -42,13 +43,17 @@ const globalFolder = pane.addFolder({
   expanded: true,
 });
 
-
-agentFolder.addBinding(PARAMS, 'agentSpeed', { min: 0, max: 200, step: 1 })
+agentFolder.addBinding(PARAMS, 'agentSpeed', { label: 'Speed', min: 0, max: 200, step: 1 })
   .on('change', (ev) => {
-    console.log('speed change:', ev.value);
+    renderer.setSimParam('agentSpeed', ev.value);
   });
 
-globalFolder.addBinding(PARAMS, 'decayRate', { min: 0, max: 1, step: 1 / 1000 })
+agentFolder.addBinding(PARAMS, 'turnSpeed', { label: 'Turn speed', min: 1, max: 30, step: 0.2 })
   .on('change', (ev) => {
-    console.log('decay change:', ev.value);
+    renderer.setSimParam('turnSpeed', ev.value);
+  });
+
+globalFolder.addBinding(PARAMS, 'decayRate', { label: 'Decay rate', min: 0, max: 1, step: 1 / 1000 })
+  .on('change', (ev) => {
+    renderer.setSimParam('decayRate', ev.value);
   });

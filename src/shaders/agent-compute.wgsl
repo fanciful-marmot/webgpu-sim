@@ -7,6 +7,9 @@ struct Agent {
 };
 
 struct SimParams {
+    agentSpeed: f32,
+    turnSpeed: f32,
+    decayRate: f32,
     randomSeed: f32,
     deltaT: f32,
 };
@@ -27,8 +30,6 @@ const AGENT_FIELD_SIZE: f32 = 1240;
 const SENSOR_ANGLE: f32 = PI / 180 * 45; // Radians
 const SENSOR_LENGTH: f32 = 10; // field units
 const SENSOR_SIZE: i32 = 1; // field units
-const AGENT_SPEED: f32 = 100; // field units/second
-const AGENT_TURN_SPEED: f32 = 15 * PI * 2; // Radians per second
 const FIELD_MIN: vec2<f32> = vec2(0.0);
 const FIELD_MAX: vec2<f32> = vec2(AGENT_FIELD_SIZE);
 
@@ -45,7 +46,7 @@ fn velocity_from_angle(angle: f32) -> vec2<f32> {
     return vec2<f32>(
         cos(angle),
         sin(angle),
-    ) * AGENT_SPEED;
+    ) * params.agentSpeed;
 }
 
 fn sense(agent: Agent, angle_offset: f32) -> f32 {
@@ -91,13 +92,13 @@ fn compute_main(in: ComputeIn) {
         // Do nothing
     } else if forwardWeight < leftWeight && forwardWeight > rightWeight {
         // Turn randomly
-        angle += (steeringStrength - 0.5) * 2 * AGENT_TURN_SPEED * params.deltaT;
+        angle += (steeringStrength - 0.5) * 2 * params.turnSpeed * params.deltaT;
     } else if rightWeight > leftWeight {
         // Turn right
-        angle -= steeringStrength * AGENT_TURN_SPEED * params.deltaT;
+        angle -= steeringStrength * params.turnSpeed * params.deltaT;
     } else if leftWeight > rightWeight {
         // Turn left
-        angle += steeringStrength * AGENT_TURN_SPEED * params.deltaT;
+        angle += steeringStrength * params.turnSpeed * params.deltaT;
     }
 
     // Move agent

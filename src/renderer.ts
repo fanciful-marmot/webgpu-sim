@@ -45,6 +45,12 @@ const NUM_AGENTS = 10000;
 const AGENTS_PER_GROUP = 64; // TODO: Update compute shader if this changes
 const NUM_GROUPS = Math.ceil(NUM_AGENTS / AGENTS_PER_GROUP);
 
+export type SimParam = {
+    agentSpeed: number;
+    turnSpeed: number;
+    decayRate: number;
+};
+
 export default class Renderer {
     canvas: HTMLCanvasElement;
     previousFrameTimestamp: DOMHighResTimeStamp = 0;
@@ -67,6 +73,11 @@ export default class Renderer {
     pipeline: GPURenderPipeline;
 
     // Sim
+    simParams: SimParam = {
+        agentSpeed: 100,
+        turnSpeed: 13,
+        decayRate: 0.25,
+    };
     simParamsUniformLayout: GPUBindGroupLayout;
     simParamBindGroup: GPUBindGroup;
     simParamValues: Float32Array;
@@ -135,7 +146,13 @@ export default class Renderer {
 
     initializeSimParams() {
         // SimParams uniforms
-        this.simParamValues = new Float32Array([Math.random(), 16.6 / 1000]);
+        this.simParamValues = new Float32Array([
+            this.simParams.agentSpeed,
+            this.simParams.turnSpeed,
+            this.simParams.decayRate,
+            Math.random(), // randomSeed
+            16.6 / 1000, // deltaT
+        ]);
         this.simParamBuffer = createBuffer(this.device, this.simParamValues, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST);
         this.simParamsUniformLayout = this.device.createBindGroupLayout({
             label: 'AgentSimParams',
@@ -145,7 +162,7 @@ export default class Renderer {
                     visibility: GPUShaderStage.COMPUTE | GPUShaderStage.FRAGMENT,
                     buffer: {
                         type: 'uniform',
-                        minBindingSize: 8,
+                        minBindingSize: this.simParamValues.buffer.byteLength,
                     },
                 },
             ]
@@ -571,7 +588,13 @@ export default class Renderer {
         this.previousFrameTimestamp = time;
 
         // Update uniforms
-        this.simParamValues.set([Math.random(), deltaT]);
+        this.simParamValues.set([
+            this.simParams.agentSpeed,
+            this.simParams.turnSpeed,
+            this.simParams.decayRate,
+            Math.random(), // randomSeed
+            deltaT, // deltaT
+        ]);
         this.device.queue.writeBuffer(this.simParamBuffer, 0, this.simParamValues);
 
         // Write and submit commands to queue
@@ -590,4 +613,8 @@ export default class Renderer {
         // Refresh canvas
         requestAnimationFrame(this.render);
     };
+
+    setSimParam(paramName: keyof SimParam, value: number) {
+        this.simParams[paramName] = value;
+    }
 }
