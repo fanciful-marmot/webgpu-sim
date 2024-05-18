@@ -40,15 +40,17 @@ const createBuffer = (
     return buffer;
 };
 
-const AGENT_FIELD_SIZE = 1240;
-const NUM_AGENTS = 10000;
-const AGENTS_PER_GROUP = 64; // TODO: Update compute shader if this changes
-const NUM_GROUPS = Math.ceil(NUM_AGENTS / AGENTS_PER_GROUP);
+const AGENTS_PER_GROUP = 64;
 
 export type SimParam = {
     agentSpeed: number;
     turnSpeed: number;
     decayRate: number;
+};
+
+export type InitialConditions = {
+    numAgents: number,
+    fieldSize: number,
 };
 
 export default class Renderer {
@@ -83,6 +85,9 @@ export default class Renderer {
     simParamValues: Float32Array;
     simParamBuffer: GPUBuffer;
 
+    // Initial conditions
+    initialConditions: InitialConditions;
+
     // Agent resources
     agentFieldTextures: Array<{
         texture: GPUTexture;
@@ -99,9 +104,35 @@ export default class Renderer {
     agentComputePipeline: GPUComputePipeline;
 
     pingpong: 0 | 1 = 0;
+    paused: boolean = false;
 
     constructor(canvas) {
         this.canvas = canvas;
+
+        this.initialConditions = {
+            numAgents: 10_000,
+            fieldSize: canvas.getBoundingClientRect().height * window.devicePixelRatio,
+        }
+    }
+
+    // Cleanup all resources except device and queue
+    cleanup() {
+        this.unitSquare.positionBuffer.destroy();
+        this.unitSquare.uvBuffer.destroy();
+        this.unitSquare.indexBuffer.destroy();
+
+        this.simParamBuffer.destroy();
+
+        this.agentFieldTextures.forEach(({ texture }) => {
+            texture.destroy();
+        });
+    }
+
+    reset() {
+        this.cleanup();
+        this.initializeSimParams();
+        this.initializeBlitResources();
+        this.initializeAgentResources();
     }
 
     // Start the rendering engine
@@ -182,19 +213,18 @@ export default class Renderer {
     initializeAgentResources() {
         // Create the agent buffers
         const floatsPerAgent = 4;
-        const agentData = new Float32Array(NUM_AGENTS * floatsPerAgent);
-        for (let i = 0; i < NUM_AGENTS * floatsPerAgent; i += floatsPerAgent) {
+        const agentData = new Float32Array(this.initialConditions.numAgents * floatsPerAgent);
+        for (let i = 0; i < this.initialConditions.numAgents * floatsPerAgent; i += floatsPerAgent) {
             const { x, y } = randomPoint();
             const angle = Math.atan2(y, x);
-            // const angle = Math.random() * 2 * Math.PI
-            agentData[i + 0] = x * AGENT_FIELD_SIZE * 0.75 + AGENT_FIELD_SIZE * 0.5; // pos.x
-            agentData[i + 1] = y * AGENT_FIELD_SIZE * 0.75 + AGENT_FIELD_SIZE * 0.5; // pos.y
+            agentData[i + 0] = x * this.initialConditions.fieldSize * 0.5 + this.initialConditions.fieldSize * 0.5; // pos.x
+            agentData[i + 1] = y * this.initialConditions.fieldSize * 0.5 + this.initialConditions.fieldSize * 0.5; // pos.y
             agentData[i + 2] = angle + Math.PI; // angle
             agentData[i + 3] = 0; // Alignment
         }
         this.agentBuffers = [
-            { buffer: createBuffer(this.device, agentData, GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE) },
-            { buffer: createBuffer(this.device, agentData, GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE) },
+            { buffer: createBuffer(this.device, agentData, GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST) },
+            { buffer: createBuffer(this.device, agentData, GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST) },
         ];
 
         // Shaders
@@ -240,12 +270,12 @@ export default class Renderer {
         const pipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [this.simParamsUniformLayout, bindGroupLayout] });
 
         // Create field textures
-        const baseFieldData = new Float32Array(AGENT_FIELD_SIZE * AGENT_FIELD_SIZE * 4);
+        const baseFieldData = new Float32Array(this.initialConditions.fieldSize * this.initialConditions.fieldSize * 4);
         baseFieldData.fill(0);
 
         const fieldDescriptor: GPUTextureDescriptor = {
             label: 'AgentFieldTexture',
-            size: [AGENT_FIELD_SIZE, AGENT_FIELD_SIZE, 1],
+            size: [this.initialConditions.fieldSize, this.initialConditions.fieldSize, 1],
             usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_DST | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING,
             format: 'rgba32float',
         };
@@ -262,7 +292,7 @@ export default class Renderer {
                 ],
             });
 
-            this.device.queue.writeTexture({ texture }, baseFieldData, { bytesPerRow: AGENT_FIELD_SIZE * 4 * 4 }, { width: AGENT_FIELD_SIZE, height: AGENT_FIELD_SIZE });
+            this.device.queue.writeTexture({ texture }, baseFieldData, { bytesPerRow: this.initialConditions.fieldSize * 4 * 4 }, { width: this.initialConditions.fieldSize, height: this.initialConditions.fieldSize });
 
             return {
                 texture,
@@ -321,7 +351,7 @@ export default class Renderer {
                     visibility: GPUShaderStage.COMPUTE,
                     buffer: {
                         type: 'read-only-storage',
-                        minBindingSize: NUM_AGENTS * floatsPerAgent * 4,
+                        minBindingSize: this.initialConditions.numAgents * floatsPerAgent * 4,
                     },
                 },
                 {
@@ -329,7 +359,7 @@ export default class Renderer {
                     visibility: GPUShaderStage.COMPUTE,
                     buffer: {
                         type: 'storage',
-                        minBindingSize: NUM_AGENTS * floatsPerAgent * 4,
+                        minBindingSize: this.initialConditions.numAgents * floatsPerAgent * 4,
                     },
                 },
                 {
@@ -501,7 +531,7 @@ export default class Renderer {
         pass.setPipeline(this.agentComputePipeline);
         pass.setBindGroup(0, this.simParamBindGroup);
         pass.setBindGroup(1, this.agentBindGroups[this.pingpong].bindGroup);
-        pass.dispatchWorkgroups(NUM_GROUPS, 1, 1);
+        pass.dispatchWorkgroups(Math.ceil(this.initialConditions.numAgents / AGENTS_PER_GROUP), 1, 1);
         pass.end();
     }
 
@@ -523,16 +553,16 @@ export default class Renderer {
         pass.setViewport(
             0,
             0,
-            AGENT_FIELD_SIZE,
-            AGENT_FIELD_SIZE,
+            this.initialConditions.fieldSize,
+            this.initialConditions.fieldSize,
             0,
             1
         );
         pass.setScissorRect(
             0,
             0,
-            AGENT_FIELD_SIZE,
-            AGENT_FIELD_SIZE
+            this.initialConditions.fieldSize,
+            this.initialConditions.fieldSize
         );
         pass.setBindGroup(0, this.simParamBindGroup);
         pass.setBindGroup(1, this.agentFieldTextures[this.pingpong].bindGroup);
@@ -587,6 +617,10 @@ export default class Renderer {
         const deltaT = Math.min(17, (time - this.previousFrameTimestamp)) / 1000; // In seconds
         this.previousFrameTimestamp = time;
 
+        if (this.paused) {
+            return;
+        }
+
         // Update uniforms
         this.simParamValues.set([
             this.simParams.agentSpeed,
@@ -614,7 +648,19 @@ export default class Renderer {
         requestAnimationFrame(this.render);
     };
 
+    getSimParam(paramName: keyof SimParam): number {
+        return this.simParams[paramName];
+    }
+
     setSimParam(paramName: keyof SimParam, value: number) {
         this.simParams[paramName] = value;
+    }
+
+    getInitialCondition(paramName: keyof InitialConditions): number {
+        return this.initialConditions[paramName];
+    }
+
+    setInitialCondition(paramName: keyof InitialConditions, value: number) {
+        this.initialConditions[paramName] = value;
     }
 }

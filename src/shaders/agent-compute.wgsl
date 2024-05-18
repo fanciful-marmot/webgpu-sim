@@ -26,12 +26,9 @@ struct ComputeIn {
 
 const PI: f32 = 3.14159274;
 const TWO_PI: f32 = 6.28318548;
-const AGENT_FIELD_SIZE: f32 = 1240;
 const SENSOR_ANGLE: f32 = PI / 180 * 45; // Radians
 const SENSOR_LENGTH: f32 = 10; // field units
 const SENSOR_SIZE: i32 = 1; // field units
-const FIELD_MIN: vec2<f32> = vec2(0.0);
-const FIELD_MAX: vec2<f32> = vec2(AGENT_FIELD_SIZE);
 
 // https://gist.github.com/patriciogonzalezvivo/670c22f3966e662d2f83
 fn rand(n: f32) -> f32 {
@@ -76,6 +73,9 @@ fn compute_main(in: ComputeIn) {
         return;
     }
 
+    let FIELD_MIN: vec2<f32> = vec2(0.0);
+    let FIELD_MAX = vec2<f32>(textureDimensions(fieldDst).xy);
+
     var agent = agentsSrc[index];
     var pos = agent.pos;
     var angle = agent.angle;
@@ -105,7 +105,7 @@ fn compute_main(in: ComputeIn) {
     pos += velocity_from_angle(angle) * params.deltaT;
 
     // Keep particles in bounds
-    if pos.x < 0 || pos.x > AGENT_FIELD_SIZE || pos.y < 0 || pos.y > AGENT_FIELD_SIZE {
+    if pos.x < 0 || pos.x > FIELD_MAX.x || pos.y < 0 || pos.y > FIELD_MAX.y {
         pos = clamp(pos, FIELD_MIN, FIELD_MAX); // Reset position and pick a new angle
 
         // Random bounce angle
