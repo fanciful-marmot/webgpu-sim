@@ -19,6 +19,9 @@ fn vs_main(in: VertexInput) -> VertexOutput {
 }
 
 struct SimParams {
+    agentSpeed: f32,
+    turnSpeed: f32,
+    decayRate: f32,
     randomSeed: f32,
     deltaT: f32,
 };
@@ -28,26 +31,27 @@ struct SimParams {
 @group(1) @binding(0) var fieldSampler: sampler;
 @group(1) @binding(1) var fieldTexture: texture_2d<f32>;
 
-const DECAY_RATE = 0.1; // units/second
-
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     var pixelStep = vec2(1.0) / vec2f(textureDimensions(fieldTexture));
 
-    var color_out = vec4f();
+    var sum = vec4f();
+    var original_color = textureSample(fieldTexture, fieldSampler, in.uv);
 
     // Diffusion 3x3 blur
-    var sum = vec4f();
     for (var i = -1; i <= 1; i++) {
         for (var j = -1; j <= 1; j++) {
             sum += textureSample(fieldTexture, fieldSampler, in.uv + pixelStep * vec2f(f32(i), f32(j)));
         }
     }
-    // TODO: This should somehow be factored by time
-    color_out += sum / 9.0;
+
+    var blurred_color = sum / 9.0;
+    var diffuse_weight = 2.0 / 9.0;
+    // var diffuse_weight = saturate(vec4(DECAY_RATE) * params.deltaT) * 50;
+    blurred_color = mix(original_color, blurred_color, diffuse_weight);
 
     // Decay
-    color_out = clamp(color_out - vec4(DECAY_RATE) * params.deltaT, vec4(), vec4(1.0));
+    var color_out = max(vec4f(), blurred_color - vec4(params.decayRate) * params.deltaT);
 
     return color_out;
 }
