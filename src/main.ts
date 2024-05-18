@@ -67,7 +67,7 @@ globalFolder.addBinding(PARAMS, 'decayRate', { label: 'Decay rate', min: 0, max:
     renderer.setSimParam('decayRate', ev.value);
   });
 
-initFolder.addBinding(INITIAL_CONDITIONS, 'numAgents', { label: 'Num agents', min: 1000, max: 4_000_000, step: 1000 });
+initFolder.addBinding(INITIAL_CONDITIONS, 'numAgents', { label: 'Num agents', min: 1000, max: 2_000_000, step: 1000 });
 
 initFolder.addBinding(INITIAL_CONDITIONS, 'fieldSize', { label: 'Field size', min: 128, max: 2048, step: 1 });
 
