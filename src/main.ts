@@ -1,4 +1,4 @@
-import { Pane } from 'tweakpane';
+import { ListBladeApi, Pane } from 'tweakpane';
 import Renderer from './renderer';
 
 const canvas = document.getElementById('gfx') as HTMLCanvasElement;
@@ -23,7 +23,7 @@ observer.observe(canvas, { box: 'device-pixel-content-box' });
 const renderer = new Renderer(canvas);
 renderer.start();
 
-// Connect knobs
+// Editable params
 const PARAMS = {
   decayRate: renderer.getSimParam('decayRate'),
   turnSpeed: renderer.getSimParam('turnSpeed'),
@@ -35,10 +35,51 @@ const INITIAL_CONDITIONS = {
   fieldSize: renderer.getInitialCondition('fieldSize'),
 };
 
+// Presets
+const PRESETS = {
+  Default: {
+    params: { ...PARAMS },
+    init: { ...INITIAL_CONDITIONS },
+  },
+  Nova: {
+    params: {
+      agentSpeed: 54,
+      turnSpeed: 2.6,
+      decayRate: 0.25,
+    },
+    init: {
+      numAgents: 220_000,
+      fieldSize: 2048,
+    },
+  },
+};
+
+// Connect knobs
 const pane = new Pane({
   title: 'Parameters',
   expanded: true,
 });
+(pane.addBlade({
+  view: 'list',
+  label: 'Preset',
+  options: [...Object.keys(PRESETS)]
+    .map((text) => ({
+      text,
+      value: text,
+    })),
+  value: 'Default',
+}) as ListBladeApi<keyof typeof PRESETS>).on('change', (ev) => {
+  const preset = PRESETS[ev.value];
+
+  [...Object.entries(preset.params)]
+    .forEach(([param, value]) => renderer.setSimParam(param as any, value as any));
+
+  [...Object.entries(preset.init)]
+    .forEach(([param, value]) => renderer.setInitialCondition(param as any, value as any));
+
+  renderer.reset();
+});
+
 const agentFolder = pane.addFolder({
   title: 'Agents',
   expanded: true,

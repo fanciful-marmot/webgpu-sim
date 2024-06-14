@@ -46,12 +46,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     }
 
     var blurred_color = sum / 9.0;
-    var diffuse_weight = 2.0 / 9.0;
-    // var diffuse_weight = saturate(vec4(DECAY_RATE) * params.deltaT) * 50;
-    blurred_color = mix(original_color, blurred_color, diffuse_weight);
+
+    var diffused_color = mix(original_color, blurred_color, 100.0 * params.deltaT);
 
     // Decay
-    var color_out = max(vec4f(), blurred_color - vec4(params.decayRate) * params.deltaT);
+    var color_out = max(vec4f(), diffused_color - vec4(params.decayRate) * params.deltaT);
 
     return color_out;
 }

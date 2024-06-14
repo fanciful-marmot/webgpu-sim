@@ -111,7 +111,7 @@ export default class Renderer {
 
         this.initialConditions = {
             numAgents: 10_000,
-            fieldSize: canvas.getBoundingClientRect().height * window.devicePixelRatio,
+            fieldSize: Math.min(canvas.getBoundingClientRect().width, canvas.getBoundingClientRect().height) * window.devicePixelRatio,
         }
     }
 
