@@ -1,6 +1,6 @@
 # WebGPU Sim
 
-<img width="450" alt="nova" src="https://github.com/fanciful-marmot/webgpu-sim/assets/3170456/b43d9d23-7362-4708-ab4f-28226c60ba3e">
+<img width="100%" alt="nova" src="https://github.com/fanciful-marmot/webgpu-sim/assets/3170456/b43d9d23-7362-4708-ab4f-28226c60ba3e">
 
 A simple webgpu sim!
 
