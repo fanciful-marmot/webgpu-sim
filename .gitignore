@@ -4,6 +4,9 @@ modules/
 ts-node--*/
 rss.xml
 
+# Misc
+.DS_Store
+
 # Logs
 logs
 *.log
