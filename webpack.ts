@@ -1,5 +1,6 @@
 import webpack from 'webpack';
 import { CleanWebpackPlugin } from 'clean-webpack-plugin';
+import CopyPlugin from 'copy-webpack-plugin';
 import path from 'path';
 import { argv } from 'process';
 
@@ -50,7 +51,12 @@ let config: webpack.Configuration = {
                     isProduction ? 'production' : 'development'
                 )
             }
-        })
+        }),
+        new CopyPlugin({
+            patterns: [
+                path.resolve(__dirname, 'index.html'),
+            ],
+        }),
     ],
     optimization: {
         minimize: isProduction ? true : false
