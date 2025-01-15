@@ -1,5 +1,6 @@
-import { ListBladeApi, Pane } from 'tweakpane';
+import { FolderApi, ListBladeApi, Pane } from 'tweakpane';
 import Renderer from './renderer';
+import { PRESETS } from './presets';
 
 const canvas = document.getElementById('gfx') as HTMLCanvasElement;
 const { width, height } = canvas.getBoundingClientRect();
@@ -35,23 +36,11 @@ const INITIAL_CONDITIONS = {
   fieldSize: renderer.getInitialCondition('fieldSize'),
 };
 
-// Presets
-const PRESETS = {
-  Default: {
-    params: { ...PARAMS },
-    init: { ...INITIAL_CONDITIONS },
-  },
-  Nova: {
-    params: {
-      agentSpeed: 54,
-      turnSpeed: 2.6,
-      decayRate: 0.25,
-    },
-    init: {
-      numAgents: 220_000,
-      fieldSize: 2048,
-    },
-  },
+const reset = () => {
+  renderer.setInitialCondition('numAgents', INITIAL_CONDITIONS.numAgents);
+  renderer.setInitialCondition('fieldSize', INITIAL_CONDITIONS.fieldSize);
+
+  renderer.reset();
 };
 
 // Connect knobs
@@ -59,6 +48,11 @@ const pane = new Pane({
   title: 'Parameters',
   expanded: true,
 });
+
+let agentFolder: FolderApi;
+let globalFolder: FolderApi;
+let initFolder: FolderApi;
+
 (pane.addBlade({
   view: 'list',
   label: 'Preset',
@@ -71,27 +65,25 @@ const pane = new Pane({
 }) as ListBladeApi<keyof typeof PRESETS>).on('change', (ev) => {
   const preset = PRESETS[ev.value];
 
-  [...Object.entries(preset.params)]
-    .forEach(([param, value]) => renderer.setSimParam(param as any, value as any));
+  agentFolder.importState(preset.agentFolder);
+  globalFolder.importState(preset.globalFolder);
+  initFolder.importState(preset.initFolder);
 
-  [...Object.entries(preset.init)]
-    .forEach(([param, value]) => renderer.setInitialCondition(param as any, value as any));
-
-  renderer.reset();
+  reset();
 });
 
-const agentFolder = pane.addFolder({
+agentFolder = pane.addFolder({
   title: 'Agents',
   expanded: true,
 });
-const globalFolder = pane.addFolder({
+globalFolder = pane.addFolder({
   title: 'Global',
   expanded: true,
 });
-const initFolder = pane.addFolder({
+initFolder = pane.addFolder({
   title: 'Initial conditions',
   expanded: true,
-})
+});
 
 agentFolder.addBinding(PARAMS, 'agentSpeed', { label: 'Speed', min: 0, max: 200, step: 1 })
   .on('change', (ev) => {
@@ -113,8 +105,4 @@ initFolder.addBinding(INITIAL_CONDITIONS, 'numAgents', { label: 'Num agents', mi
 initFolder.addBinding(INITIAL_CONDITIONS, 'fieldSize', { label: 'Field size', min: 128, max: 2048, step: 1 });
 
 initFolder.addButton({ title: 'Restart' })
-  .on('click', () => {
-    renderer.setInitialCondition('numAgents', INITIAL_CONDITIONS.numAgents);
-    renderer.setInitialCondition('fieldSize', INITIAL_CONDITIONS.fieldSize);
-    renderer.reset()
-  });
+  .on('click', reset);
