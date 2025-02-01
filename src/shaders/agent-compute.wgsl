@@ -3,7 +3,7 @@
 struct Agent {
     pos: vec2<f32>,
     angle: f32,
-    t: f32,
+    species: f32,
 };
 
 struct SimParams {
@@ -50,13 +50,22 @@ fn sense(agent: Agent, angle_offset: f32) -> f32 {
     var angle = agent.angle + angle_offset;
     var direction = vec2f(cos(angle), sin(angle));
     var sensor_center = agent.pos + direction * SENSOR_LENGTH;
+    var species: u32 = u32(agent.species);
 
     var sum = 0.0;
     for (var i = -SENSOR_SIZE; i <= SENSOR_SIZE; i++) {
         for (var j = -SENSOR_SIZE; j <= SENSOR_SIZE; j++) {
             var pos = sensor_center + vec2f(f32(i), f32(j));
 
-            sum += textureLoad(fieldSrc, vec2<u32>(pos), 0).r;
+            var src = textureLoad(fieldSrc, vec2<u32>(pos), 0).rgb;
+            if (species == 0) {
+                sum += src.r;
+            } else if (species == 1) {
+                sum += src.g;
+            } else {
+                sum += src.b;
+            }
+            
         }
     }
 
@@ -80,6 +89,7 @@ fn compute_main(in: ComputeIn) {
     var pos = agent.pos;
     var angle = agent.angle;
     var rand_seed = angle + pos.x + pos.y + f32(in.global_invocation_id.x);
+    var species: u32 = u32(agent.species);
 
     // Sense trails
     var forwardWeight = sense(agent, 0);
@@ -113,10 +123,19 @@ fn compute_main(in: ComputeIn) {
     }
 
     // Update agent
-    agentsDst[index] = Agent(pos, angle, 0);
+    agentsDst[index] = Agent(pos, angle, agent.species);
 
     // Write data to field
-    // textureStore(fieldDst, vec2<u32>(12, 12), vec4<f32>(1.0));
-    textureStore(fieldDst, vec2<i32>(pos), vec4(vec3f(1.0), 1.0));
+    // TODO: There's a bit of a race condition here if 2 particles try to write to the same
+    // field cell from different species on the same tick
+    var dst = textureLoad(fieldSrc, vec2<u32>(pos), 0).rgb;
+    if (species == 0) {
+        dst.r = 1.0;
+    } else if (species == 1) {
+        dst.g = 1.0;
+    } else {
+        dst.b = 1.0;
+    }
+    textureStore(fieldDst, vec2<i32>(pos), vec4(dst, 1.0));
     // textureStore(fieldDst, vec2<i32>(pos), vec4(saturate(vec3f(1.0, leftWeight, rightWeight)), 1.0));
 }

@@ -23,5 +23,12 @@ fn vs_main(in: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
-    return vec4(textureSample(fieldTexture, fieldSampler, in.uv).rgb, 1.0);
+    var f = textureSample(fieldTexture, fieldSampler, in.uv).rgb;
+
+    var c: vec3f = 
+        f.r * vec3f(1.00, 0.0200, 0.886) +
+        f.g * vec3f(0.216, 0.980, 0.585) +
+        f.b * vec3f(0.0200, 0.494, 1.00);
+
+    return vec4(c, 1.0);
 }

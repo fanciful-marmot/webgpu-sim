@@ -76,8 +76,8 @@ export default class Renderer {
 
     // Sim
     simParams: SimParam = {
-        agentSpeed: 100,
-        turnSpeed: 13,
+        agentSpeed: 54,
+        turnSpeed: 2.6,
         decayRate: 0.25,
     };
     simParamsUniformLayout: GPUBindGroupLayout;
@@ -112,7 +112,7 @@ export default class Renderer {
         this.canvas = canvas;
 
         this.initialConditions = {
-            numAgents: 10_000,
+            numAgents: 200_000,
             fieldSize: Math.round(canvas.getBoundingClientRect().height * window.devicePixelRatio),
         }
     }
@@ -222,7 +222,7 @@ export default class Renderer {
             agentData[i + 0] = x * this.initialConditions.fieldSize * 0.5 + this.initialConditions.fieldSize * 0.5; // pos.x
             agentData[i + 1] = y * this.initialConditions.fieldSize * 0.5 + this.initialConditions.fieldSize * 0.5; // pos.y
             agentData[i + 2] = angle + Math.PI; // angle
-            agentData[i + 3] = 0; // Alignment
+            agentData[i + 3] = i % 3; // Species
         }
         this.agentBuffers = [
             { buffer: createBuffer(this.device, agentData, GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST) },
