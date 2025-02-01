@@ -48,9 +48,18 @@ export type SimParam = {
     decayRate: number;
 };
 
+export type BlitParam = {
+    species1Colour: [number, number, number];
+    species2Colour: [number, number, number];
+    species3Colour: [number, number, number];
+}
+
 export type InitialConditions = {
     numAgents: number,
     fieldSize: number,
+    species1Occurence: number;
+    species2Occurence: number;
+    species3Occurence: number;
 };
 export default class Renderer {
     isHdr: boolean = false;
@@ -71,6 +80,15 @@ export default class Renderer {
         uvBuffer: GPUBuffer;
         indexBuffer: GPUBuffer;
     };
+    blitParams: BlitParam = {
+        species1Colour: [1.00, 0.0200, 0.886],
+        species2Colour: [0.216, 0.980, 0.585],
+        species3Colour: [0.0200, 0.494, 1.00],
+    };
+    blitParamsUniformLayout: GPUBindGroupLayout;
+    blitParamBindGroup: GPUBindGroup;
+    blitParamValues: Float32Array;
+    blitParamBuffer: GPUBuffer;
     blitModule: GPUShaderModule;
     pipeline: GPURenderPipeline;
 
@@ -114,6 +132,9 @@ export default class Renderer {
         this.initialConditions = {
             numAgents: 200_000,
             fieldSize: Math.round(canvas.getBoundingClientRect().height * window.devicePixelRatio),
+            species1Occurence: 1,
+            species2Occurence: 1,
+            species3Occurence: 1,
         }
     }
 
@@ -438,6 +459,40 @@ export default class Renderer {
             indexBuffer: createBuffer(this.device, unitSquareData.indices, GPUBufferUsage.INDEX),
         };
 
+        // BlitParams uniforms
+        this.blitParamValues = new Float32Array([
+            ...this.blitParams.species1Colour,
+            0, // Pad to a vec4
+            ...this.blitParams.species2Colour,
+            0, // Pad to a vec4
+            ...this.blitParams.species3Colour,
+            0, // Pad to a vec4
+        ]);
+        this.blitParamBuffer = createBuffer(this.device, this.blitParamValues, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST);
+        this.blitParamsUniformLayout = this.device.createBindGroupLayout({
+            label: 'BlitParams',
+            entries: [
+                {
+                    binding: 0,
+                    visibility: GPUShaderStage.FRAGMENT,
+                    buffer: {
+                        type: 'uniform',
+                        minBindingSize: this.blitParamValues.buffer.byteLength,
+                    },
+                },
+            ]
+        });
+        this.blitParamBindGroup = this.device.createBindGroup({
+            label: `BlitParamUniforms`,
+            layout: this.blitParamsUniformLayout,
+            entries: [
+                {
+                    binding: 0,
+                    resource: { buffer: this.blitParamBuffer },
+                },
+            ]
+        });
+
         // Shaders
         this.blitModule = this.device.createShaderModule({
             code: blitShaderCode,
@@ -475,7 +530,7 @@ export default class Renderer {
                 { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
             ],
         });
-        const pipelineLayoutDesc = { bindGroupLayouts: [bindGroupLayout] };
+        const pipelineLayoutDesc = { bindGroupLayouts: [bindGroupLayout, this.blitParamsUniformLayout] };
         const pipelineLayout = this.device.createPipelineLayout(pipelineLayoutDesc);
 
         // Shader Stages
@@ -618,6 +673,7 @@ export default class Renderer {
             this.canvas.height
         );
         passEncoder.setBindGroup(0, this.agentFieldTextures[this.pingpong].bindGroup);
+        passEncoder.setBindGroup(1, this.blitParamBindGroup);
         passEncoder.setVertexBuffer(0, this.unitSquare.positionBuffer);
         passEncoder.setVertexBuffer(1, this.unitSquare.uvBuffer);
         passEncoder.setIndexBuffer(this.unitSquare.indexBuffer, 'uint16');
@@ -651,6 +707,18 @@ export default class Renderer {
 
         this.encodeDecayCommands(commandEncoder);
         this.encodeAgentComputeCommands(commandEncoder);
+
+        // Update blit uniforms
+        this.blitParamValues.set([
+            ...this.blitParams.species1Colour,
+            0, // Pad to vec4
+            ...this.blitParams.species2Colour,
+            0, // Pad to vec4
+            ...this.blitParams.species3Colour,
+            0, // Pad to vec4
+        ]);
+        this.device.queue.writeBuffer(this.blitParamBuffer, 0, this.blitParamValues);
+
         this.encodeBlitCommands(commandEncoder);
 
         this.device.queue.submit([commandEncoder.finish()]);
@@ -667,6 +735,14 @@ export default class Renderer {
 
     setSimParam(paramName: keyof SimParam, value: number) {
         this.simParams[paramName] = value;
+    }
+
+    getBlitParam(paramName: keyof BlitParam): [number, number, number] {
+        return this.blitParams[paramName];
+    }
+
+    setBlitParam(paramName: keyof BlitParam, value: [number, number, number]) {
+        this.blitParams[paramName] = value;
     }
 
     getInitialCondition(paramName: keyof InitialConditions): number {

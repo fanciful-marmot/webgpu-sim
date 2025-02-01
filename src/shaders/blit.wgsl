@@ -18,17 +18,24 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     return out;
 }
 
+struct BlitParams {
+    species1Colour: vec4f,
+    species2Colour: vec4f,
+    species3Colour: vec4f,
+};
+
 @group(0) @binding(0) var fieldSampler: sampler;
 @group(0) @binding(1) var fieldTexture: texture_2d<f32>;
+@group(1) @binding(0) var<uniform> params : BlitParams;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     var f = textureSample(fieldTexture, fieldSampler, in.uv).rgb;
 
     var c: vec3f = 
-        f.r * vec3f(1.00, 0.0200, 0.886) +
-        f.g * vec3f(0.216, 0.980, 0.585) +
-        f.b * vec3f(0.0200, 0.494, 1.00);
+        f.r * params.species1Colour.rgb +
+        f.g * params.species2Colour.rgb +
+        f.b * params.species3Colour.rgb;
 
     return vec4(c, 1.0);
 }
