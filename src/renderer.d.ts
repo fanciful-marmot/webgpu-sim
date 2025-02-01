@@ -1,4 +1,5 @@
 export default class Renderer {
+    isHdr: boolean;
     canvas: HTMLCanvasElement;
     adapter: GPUAdapter;
     device: GPUDevice;

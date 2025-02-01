@@ -54,6 +54,7 @@ export type InitialConditions = {
 };
 
 export default class Renderer {
+    isHdr: boolean = false;
     canvas: HTMLCanvasElement;
     previousFrameTimestamp: DOMHighResTimeStamp = 0;
 
@@ -107,6 +108,8 @@ export default class Renderer {
     paused: boolean = false;
 
     constructor(canvas) {
+        this.isHdr = window.matchMedia('(dynamic-range: high)').matches;
+
         this.canvas = canvas;
 
         this.initialConditions = {
@@ -480,7 +483,7 @@ export default class Renderer {
 
         // Color/Blend State
         const colorState: GPUColorTargetState = {
-            format: navigator.gpu.getPreferredCanvasFormat(),
+            format: this.isHdr ? 'rgba16float' : navigator.gpu.getPreferredCanvasFormat(),
         };
 
         const fragment: GPUFragmentState = {
@@ -514,9 +517,15 @@ export default class Renderer {
         // ⛓️ Swapchain
         if (!this.context) {
             this.context = this.canvas.getContext('webgpu');
+            if (!this.isHdr) {
+                console.log('Monitor doesn\'t support HDR output. Falling back...');
+            }
             const canvasConfig: GPUCanvasConfiguration = {
                 device: this.device,
-                format: navigator.gpu.getPreferredCanvasFormat(),
+                format: this.isHdr ? 'rgba16float' : navigator.gpu.getPreferredCanvasFormat(),
+                toneMapping: {
+                    mode: this.isHdr ? 'extended' : 'standard',
+                },
                 usage:
                     GPUTextureUsage.RENDER_ATTACHMENT |
                     GPUTextureUsage.COPY_SRC,

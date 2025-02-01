@@ -21,7 +21,7 @@
     "devDependencies": {
         "@tweakpane/core": "2.0.3",
         "@types/node": "^18.11.x",
-        "@webgpu/types": "^0.1.26",
+        "@webgpu/types": "^0.1.54",
         "clean-webpack-plugin": "^4.0.x",
         "copy-webpack-plugin": "^12.0.2",
         "cross-env": "^7.0.x",
