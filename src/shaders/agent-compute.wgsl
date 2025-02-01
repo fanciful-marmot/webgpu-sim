@@ -22,7 +22,7 @@ struct ComputeIn {
 @group(1) @binding(0) var<storage, read> agentsSrc : array<Agent>;
 @group(1) @binding(1) var<storage, read_write> agentsDst : array<Agent>;
 @group(1) @binding(2) var fieldSrc : texture_2d<f32>;
-@group(1) @binding(3) var fieldDst : texture_storage_2d<rgba32float, write>;
+@group(1) @binding(3) var fieldDst : texture_storage_2d<rgba16float, write>;
 
 const PI: f32 = 3.14159274;
 const TWO_PI: f32 = 6.28318548;

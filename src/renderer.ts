@@ -52,7 +52,6 @@ export type InitialConditions = {
     numAgents: number,
     fieldSize: number,
 };
-
 export default class Renderer {
     isHdr: boolean = false;
     canvas: HTMLCanvasElement;
@@ -114,7 +113,7 @@ export default class Renderer {
 
         this.initialConditions = {
             numAgents: 10_000,
-            fieldSize: canvas.getBoundingClientRect().height * window.devicePixelRatio,
+            fieldSize: Math.round(canvas.getBoundingClientRect().height * window.devicePixelRatio),
         }
     }
 
@@ -273,14 +272,15 @@ export default class Renderer {
         const pipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [this.simParamsUniformLayout, bindGroupLayout] });
 
         // Create field textures
-        const baseFieldData = new Float32Array(this.initialConditions.fieldSize * this.initialConditions.fieldSize * 4);
+        // This is really treated as a Float16Array
+        const baseFieldData = new Uint16Array(this.initialConditions.fieldSize * this.initialConditions.fieldSize * 4);
         baseFieldData.fill(0);
 
         const fieldDescriptor: GPUTextureDescriptor = {
             label: 'AgentFieldTexture',
             size: [this.initialConditions.fieldSize, this.initialConditions.fieldSize, 1],
             usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_DST | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING,
-            format: 'rgba32float',
+            format: 'rgba16float',
         };
         const sampler = this.device.createSampler();
         const createField = () => {
@@ -295,7 +295,11 @@ export default class Renderer {
                 ],
             });
 
-            this.device.queue.writeTexture({ texture }, baseFieldData, { bytesPerRow: this.initialConditions.fieldSize * 4 * 4 }, { width: this.initialConditions.fieldSize, height: this.initialConditions.fieldSize });
+            this.device.queue.writeTexture(
+                { texture },
+                baseFieldData,
+                { bytesPerRow: this.initialConditions.fieldSize * 4 * 2 },
+                { width: this.initialConditions.fieldSize, height: this.initialConditions.fieldSize });
 
             return {
                 texture,
@@ -317,7 +321,7 @@ export default class Renderer {
         };
 
         const colorState: GPUColorTargetState = {
-            format: 'rgba32float',
+            format: 'rgba16float',
         };
 
         const fragment: GPUFragmentState = {
@@ -377,7 +381,7 @@ export default class Renderer {
                     visibility: GPUShaderStage.COMPUTE,
                     storageTexture: {
                         access: 'write-only',
-                        format: 'rgba32float',
+                        format: 'rgba16float',
                         viewDimension: '2d',
                     },
                 },
