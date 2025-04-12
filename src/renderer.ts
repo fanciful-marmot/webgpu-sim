@@ -579,12 +579,16 @@ export default class Renderer {
             if (!this.isHdr) {
                 console.log('Monitor doesn\'t support HDR output. Falling back...');
             }
+
+            const supportsP3 = matchMedia('(color-gamut: p3)').matches;
+            console.log('Using output colour profile:', supportsP3 ? 'display-p3' : 'srgb');
             const canvasConfig: GPUCanvasConfiguration = {
                 device: this.device,
                 format: this.isHdr ? 'rgba16float' : navigator.gpu.getPreferredCanvasFormat(),
                 toneMapping: {
                     mode: this.isHdr ? 'extended' : 'standard',
                 },
+                colorSpace: supportsP3 ? 'display-p3' : 'srgb',
                 usage:
                     GPUTextureUsage.RENDER_ATTACHMENT |
                     GPUTextureUsage.COPY_SRC,
