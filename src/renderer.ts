@@ -584,6 +584,10 @@ export default class Renderer {
             console.log('Using output colour profile:', supportsP3 ? 'display-p3' : 'srgb');
             const canvasConfig: GPUCanvasConfiguration = {
                 device: this.device,
+                // NOTE: You may detect noise in the image for what should be a solid colour
+                // if you use a colour picker when output is rgba16float. This happens on
+                // a macbook air M1. The cause seems to be that the display is actually 8-bit
+                // at the end of the day and fakes 10-bit support with dithering
                 format: this.isHdr ? 'rgba16float' : navigator.gpu.getPreferredCanvasFormat(),
                 toneMapping: {
                     mode: this.isHdr ? 'extended' : 'standard',
